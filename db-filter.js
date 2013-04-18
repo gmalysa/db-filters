@@ -7,6 +7,7 @@
 var _ = require('underscore');
 var mysql = require('mysql');
 var crypto = require('crypto');
+var fs = require('fs');
 
 /**
  * Constructor for the db filter takes options to define the table that it will be
@@ -23,8 +24,36 @@ function db(table, columns, special) {
 
 // Static/constant definition
 _.extend(db, {
-	int_t : 1,
-	date_t : 2,
+	int_t : 1,			//!< Indicates that a field is one of the INT types (TINY, SMALL, etc.)
+	date_t : 2,			//!< Indicates that a field is a DATE type (*not* DATETIME, TIMESTAMP, etc.)
+	datetime_t : 3,		//!< Indicates that a field is a DATETIME or TIMESTAMP type
+	timestamp_t : 3,	//!< Alias for DATETIME, as both TIMESTAMP and DATETIME are implemented the same way
+	
+	/**
+	 * Static initialization routine, this is used to take a folder of filter definitions
+	 * and import them automatically, so that you don't have to manually update it as
+	 * table definitions are added/removed
+	 * @param path The path to where all of the table definitions are stored
+	 * @param log Callback to invoke for each file to be read to log the action, optional
+	 */
+	init : function(path, log) {
+		var files = fs.readdirSync(path);
+		
+		_.each(files, function(f) {
+			// Skip hidden files...
+			if (f[0] == '.')
+				return;
+
+			if (log)
+				log(f);
+
+			// Each filter should be implemented as a single function that takes the db object
+			// and then creates an instance with appropriate column/table/special info, and saves
+			// it as a static property on database
+			var filter = require(path+'/'+f);
+			filter(db);
+		});
+	}
 });
 
 // Member/instance data definition
@@ -111,7 +140,7 @@ _.extend(db.prototype, {
 				qi.count++;
 			}
 			else {
-				that.queries[key] = {'count' : 1, 'query' : query};
+				that.queries[key] = {'count' : 1, 'sql' : query};
 			}
 
 			that.conn.query(query, function(err, rows) {
