@@ -299,13 +299,16 @@ _.extend(db.prototype, {
 
 	/**
 	 * This converts a value to the format for the mysql Date column type, accepting a
-	 * string, unix timestamp, or Date object to convert
+	 * string, unix timestamp, or Date object to convert. Note we just use the js Date
+	 * object to convert, so hopefully whatever you have makes sense to its constructor
 	 * @param date The date to convert, as string, int timestamp, or Date object
 	 * @return String the date represented as MySQL expects it for a DATE field
-	 * @todo Actually implement the date function
 	 */
 	handle_date : function(date) {
-		return '';
+		if (date instanceof Date) {
+			return date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate();
+		
+		return this.handle_date(new Date(date));
 	}
 
 });
