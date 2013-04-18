@@ -103,13 +103,8 @@ _.extend(db.prototype, {
 		var that = this;
 		var hash = crypto.createHash('md5');
 
-		// Node 0.8.20 version active
-		hash.update(query, 'utf8');
-		var key = hash.digest('hex');
-
-		// Node 0.10.4 crypto version commented
-//		hash.on('readable', function() {
-//			var key = hash.read();
+		// Function used to do actual processing, separated out because of crypto module differences
+		var doquery = function(key) {
 			var qi = that.queries[key];
 			
 			if (qi) {
@@ -119,7 +114,7 @@ _.extend(db.prototype, {
 				that.queries[key] = {'count' : 1, 'query' : query};
 			}
 
-			this.conn.query(query, function(err, rows) {
+			that.conn.query(query, function(err, rows) {
 				if (err) {
 					failure(err);
 				}
@@ -127,9 +122,22 @@ _.extend(db.prototype, {
 					success(rows);
 				}
 			});
-//		});
+		};
 
-//		hash.write(query, 'utf8');
+		// If we're in version 10.x, attempt to use the stream interface
+		if (process.version.match(/\d+.10/)) {
+			hash.setEncoding('hex');
+			hash.on('readable', function() {
+				doquery(hash.read());
+			});
+			hash.write(query, 'utf8');
+		}
+		else {
+			// Use the older update/digest approach
+			hash.update(query, 'utf8');
+			doquery(hash.digest('hex'));
+		}
+
 	},
 
 	/**
