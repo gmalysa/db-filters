@@ -305,7 +305,7 @@ _.extend(db.prototype, {
 	 * @return String the date represented as MySQL expects it for a DATE field
 	 */
 	handle_date : function(date) {
-		if (date instanceof Date) {
+		if (date instanceof Date)
 			return date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate();
 		
 		return this.handle_date(new Date(date));
