@@ -145,7 +145,7 @@ _.extend(db.prototype, {
 
 			that.conn.query(query, function(err, rows) {
 				if (err) {
-					failure(err);
+					failure(_.extend(err, {'query' : query}));
 				}
 				else {
 					success(rows);
@@ -293,6 +293,8 @@ _.extend(db.prototype, {
 				return parseInt(value) || 0;
 			else if (ht == db.date_t)
 				return this.handle_date(value);
+			else if (ht == db.datetime_t || ht == db.timestamp_t)
+				return this.handle_datetime(value);
 		}
 		return mysql.escape(value);
 	},
@@ -312,6 +314,23 @@ _.extend(db.prototype, {
 			return date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate();
 		
 		return this.handle_date(new Date(date));
+	},
+
+	/**
+	 * this converts a value to the format for the mysql DATETIME or TIMESTAMP columns,
+	 * accepting a string, unix timestamp, or Date object to convert.
+	 * @note Datetime can handle milliseconds. Mysql ignores these, so we don't bother sending them
+	 * @param date The date to convert, as string, int, or Date object
+	 * @return String the date represented as MySQL exepcts it for a DATETIME field
+	 */
+	handle_datetime : function(date) {
+		if (date == 'NOW()')
+			return date;
+
+		if (date instanceof Date)
+			return this.handle_date(date) + ' ' + date.getHours() + ':' + date.getMinutes() + ':' + date.getSeconds();
+
+		return this.handle_datetime(new Date(date));
 	}
 
 });
