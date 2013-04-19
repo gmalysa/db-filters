@@ -294,7 +294,7 @@ _.extend(db.prototype, {
 			else if (ht == db.date_t)
 				return this.handle_date(value);
 		}
-		return '"' + mysql.escape(value) + '"';
+		return mysql.escape(value);
 	},
 
 	/**
