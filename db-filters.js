@@ -330,11 +330,16 @@ function SelectParser(options) {
 _.extend(SelectParser.prototype, {
 	fields : function() {
 		if (this.options.fields) {
-			return _.map(this.options.fields, function(v) {
-				if (_.isArray(v))
-					return v[0] + ' AS ' + v[1];
-				return v[0];
-			}).join(', ');
+			if (_.isArray(this.options.fields)) {
+				return _.map(this.options.fields, function(v) {
+					if (_.isArray(v))
+						return v[0] + ' AS ' + v[1];
+					return v[0];
+				}).join(', ');
+			}
+			else {
+				return this.options.fields;
+			}
 		}
 		return '*';
 	},
