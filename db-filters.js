@@ -2,6 +2,14 @@
  * Automatic query generation tools to simplify writing SQL and interacting with
  * databases. Currently, this supports MySQL, but ideally it'd be able to generate
  * valid queries for a wide variety of databases, facilitating backend changes.
+ *
+ * The main purpose is to provide a more powerful interface for specifying data to
+ * be sent to the database, allowing complete types to be used transparently, with
+ * translation defined on the table level (i.e. this object maps to these fields,
+ * in these ways).
+ *
+ * (c) 2013, Greg Malysa <gmalysa@stanford.edu>
+ * See LICENSE for information about the MIT License
  */
 
 var _ = require('underscore');
@@ -24,11 +32,23 @@ function db(table, columns, special) {
 
 // Static/constant definition
 _.extend(db, {
-	int_t : 1,			//!< Indicates that a field is one of the INT types (TINY, SMALL, etc.)
-	date_t : 2,			//!< Indicates that a field is a DATE type (*not* DATETIME, TIMESTAMP, etc.)
-	datetime_t : 3,		//!< Indicates that a field is a DATETIME or TIMESTAMP type
-	timestamp_t : 3,	//!< Alias for DATETIME, as both TIMESTAMP and DATETIME are implemented the same way
+	// Database field constants
+	int_t : 1,				//!< Indicates that a field is one of the INT types (TINY, SMALL, etc.)
+	date_t : 2,				//!< Indicates that a field is a DATE type (*not* DATETIME, TIMESTAMP, etc.)
+	datetime_t : 3,			//!< Indicates that a field is a DATETIME or TIMESTAMP type
+	timestamp_t : 3,		//!< Alias for DATETIME, as both TIMESTAMP and DATETIME are implemented the same way
+	varchar_t : 4,			//!< Should be used in an array with the length of the field, and data will be truncated
 	
+	// Logging levels
+	l_debug : 3,			//!< Provides debugging-quality output, including verbose query information and incorrect usage info (i.e. calling limit() on an InsertQuery)
+	l_info : 2,				//!< Provides informative output, like query strings
+	l_error : 1,			//!< Provides only error messages received from the server
+	l_none : 0,				//!< Provides no logging at all
+
+	// Static information about logging
+	fn_log : null,			//!< Callback for logging, takes one parameter, the message
+	log_level : db.l_none,	//!< Default log level
+
 	/**
 	 * Static initialization routine, this is used to take a folder of filter definitions
 	 * and import them automatically, so that you don't have to manually update it as
@@ -36,7 +56,10 @@ _.extend(db, {
 	 * @param path The path to where all of the table definitions are stored
 	 * @param log Callback to invoke for each file to be read to log the action, optional
 	 */
-	init : function(path, log) {
+	init : function(path, log, log_level) {
+		db.set_log(log);
+		db.set_log_level(log_level);
+
 		var files = fs.readdirSync(path);
 		
 		_.each(files, function(f) {
@@ -44,8 +67,8 @@ _.extend(db, {
 			if (f[0] == '.')
 				return;
 
-			if (log)
-				log(f);
+			// Pass the module name to the logging function
+			db.log(db.l_info, f);
 
 			// Each filter should be implemented as a single function that takes the db object
 			// and then creates an instance with appropriate column/table/special info, and saves
@@ -53,7 +76,36 @@ _.extend(db, {
 			var filter = require(path+'/'+f);
 			filter(db);
 		});
+	},
+
+	/**
+	 * Changes the logging function
+	 * @param log The new function to call when logging stuff, null disables logging
+	 */
+	set_log : function(log) {
+		db.fn_log = log;
+	},
+
+	/**
+	 * Changes the logging level
+	 * @param level The new logging level to use
+	 */
+	set_log_level : function(level) {
+		db.log_level = level;
+	},
+
+	/**
+	 * Function to log a message using the registered logging callback, at a specified log
+	 * level. If the current log level is less than the specified level, the message will
+	 * be silently ignored; otherwise it will be passed to the loggin callback verbatim
+	 * @param level The log level of this message
+	 * @param msg The message to log
+	 */
+	log : function(level, msg) {
+		if (level <= db.log_level && db.fn_log)
+			db.fn_log(msg);
 	}
+
 });
 
 // Member/instance data definition
@@ -80,41 +132,40 @@ _.extend(db.prototype, {
 	 * Creates and executes a SELECT query for the options given, passes control to callback
 	 * when complete
 	 * @param where Object used to specify what we're selecting by
-	 * @param negate Array used to specify any negative relationships in the where
-	 * @param options Object suitable for passing to SelectParser to read out query options
-	 * @param success Callback to be called with the query results
-	 * @param failure Callback to be called in the event of an error
+	 * @param negate Array used to specify any negative relationships in the where, optional
 	 */
-	select : function(where, negate, options, success, failure) {
-		var query = this.create_select(where, negate, options);
-		this.query(query, success, failure);
+	select : function(where, negate) {
+		negate = negate || [];
+		return new SelectQuery(this, where, negate);
 	},
 
 	/**
 	 * Creates and executes an INSERT query for the options given
-	 * ...
+	 * @param values The object to be inserted to the db
 	 */
-	insert : function(values, success, failure) {
-		var query = this.create_insert(values);
-		this.query(query, success, failure);
+	insert : function(values) {
+		return new InsertQuery(this, values);
 	},
 
 	/**
 	 * Creates and executes an UPDATE query for the options given
-	 * ...
+	 * @param update The new values to be written
+	 * @param where Object used to specify what to update
+	 * @param negate Any inverted relationships in where, optional
 	 */
-	update : function(update, where, negate, success, failure) {
-		var query = this.create_update(update, where, negate);
-		this.query(query, success, failure);
+	update : function(update, where, negate) {
+		negate = negate || [];
+		return new UpdateQuery(this, update, where, negate);
 	},
 
 	/**
 	 * Creates and executes a DELETE query for the options given
-	 * ...
+	 * @param where Object specifying what to delete
+	 * @param negate Any inverted relationships in where, optional
 	 */
-	delete : function(where, negate, success, failure) {
-		var query = this.create_delete(where, negate);
-		this.query(query, success, failure);
+	delete : function(where, negate) {
+		negate = negate || [];
+		return new DeleteQuery(this, where, negate);
 	},
 
 	/**
@@ -154,7 +205,7 @@ _.extend(db.prototype, {
 		};
 
 		// If we're in version 10.x, attempt to use the stream interface
-		if (process.version.match(/\d+.10/)) {
+		if (process.version.match(/\d+.(10|11)/)) {
 			hash.setEncoding('hex');
 			hash.on('readable', function() {
 				doquery(hash.read());
@@ -169,47 +220,6 @@ _.extend(db.prototype, {
 
 	},
 
-	/**
-	 * Create a SELECT-type query by processing all of the fields in the aggregate object
-	 * given
-	 * @param options Object whose keys correspond to features in the query
-	 * @return String the SQL query string
-	 */
-	create_select : function(where, negate, options) {
-		var sp = new SelectParser(options);
-		return 'SELECT ' + sp.fields() + ' FROM ' + this.table + this.where(where, negate) + sp.group() + sp.order() + sp.limit();
-	},
-
-	/**
-	 * Creates an INSERT-type query from the parameters given
-	 * @param insert The object whose key/value pairs will be converted into SQL to insert
-	 * @return String the INSERT query to be executed by MySQL
-	 */
-	create_insert : function(insert) {
-		return 'INSERT INTO ' + this.table + this.set(insert);
-	},
-
-	/**
-	 * Creates a DELETE-type query from the parameters given
-	 * @param del Object whose key/value pairs will be converted into SQL to delete
-	 * @param negate Array of keys whose relationship with their values should be negated
-	 * @return String the DELETE query to be executed by MySQL
-	 */
-	create_delete : function(del, negate) {
-		return 'DELETE FROM ' + this.table + this.where(del, negate);
-	},
-
-	/**
-	 * Creates an UPDATE-type query from the parameters given
-	 * @param update Object with new values to update
-	 * @param where Object used to select fields to update
-	 * @param negate Array used to negate keys in the where clause
-	 * @return String the UPDATE query to be executed by MySQL
-	 */
-	create_update : function(update, where, negate) {
-		return 'UPDATE ' + this.table + this.set(update) + this.where(where, negate);
-	},
-	
 	/**
 	 * This decodes a filter object and passes back a portion of the query string
 	 * suitable for use as a WHERE clause
@@ -295,6 +305,11 @@ _.extend(db.prototype, {
 				return this.handle_date(value);
 			else if (ht == db.datetime_t || ht == db.timestamp_t)
 				return this.handle_datetime(value);
+			else if (_.isArray(ht)) {
+				if (ht[0] == db.varchar_t) {
+					return mysql.escape((value+'').substring(0, ht[1]));
+				}
+			}
 		}
 		return mysql.escape(value);
 	},
@@ -336,60 +351,271 @@ _.extend(db.prototype, {
 });
 
 /**
- * This class is used to parse each of the potential options that can be given for a SELECT query
- * allowing us to avoid some really awkward function signatures while maintaining flexibility.
- * @param db The db filter for the table that we're generating a SELECT for
- * @param options The object of options for this query to be constructed with
+ * Query class used to make the interface make more logical sense
+ * @param filter The db filter instance that defines the table this query acts on
  */
-function SelectParser(options) {
-	this.options = options || {};
+function Query(filter) {
+	this.db = filter;
 }
 
-// Member/instance functions
-_.extend(SelectParser.prototype, {
-	fields : function() {
-		if (this.options.fields) {
-			if (_.isArray(this.options.fields)) {
-				return _.map(this.options.fields, function(v) {
-					if (_.isArray(v))
-						return v[0] + ' AS ' + v[1];
-					return v[0];
-				}).join(', ');
-			}
-			else {
-				return this.options.fields;
-			}
+/**
+ * Default, "not supported" method. This doesn't throw an error, because that'd break
+ * user callback chains in a really annoying way, but it will log to the filter's logging
+ * mechanism, which can be helpful for tracking down errors.
+ */
+function not_supported() {
+	db.log(db.l_error, 'This function (' + arguments.callee + ') is not implemented for ' + this.constructor.name);
+}
+
+// Add member functions to the query definition
+_.extend(Query.prototype, {
+	db : null,				//!< Filter instance that is used to decode arguments
+	useTableName : false,	//!< Should the table name be used when giving column names in the query? (should be true for joins)
+	_where : {},			//!< Key used to define where clauses
+	_negate : [],			//!< Array of fields to negate
+	_limit : [],			//!< List of limit parameters
+
+	/**
+	 * These three exist for the SELECT query only, so we don't provide global implementations
+	 */
+	group : not_supported,
+	fields : not_supported,
+	order : not_supported,
+
+	/**
+	 * How each query is built depends on the type of query, so we must defer that to the implementing subclass
+	 */
+	buildQuery : not_supported,
+
+	/**
+	 * Helper function that retrieves the where clause using the specified db filter to aid in construction
+	 * @return String verbatim WHERE clause, will be empty if there are no restrictions
+	 */
+	getWhere : function() {
+		return this.db.where(this.where, this.negate);
+	},
+
+	/**
+	 * Helper function that turns the _limit array into a useful limit statement (used in 3 of 4 queries)
+	 * @return String verbatim LIMIT statement, will be empty if no limits specified
+	 */
+	getLimit : function() {
+		if (this._limit.length > 0) {
+			return ' LIMIT ' + this._limit.join(', ');
 		}
-		return '*';
-	},
-
-	group : function() {
-		if (this.options.group)
-			if (_.isArray(this.options.group))
-				return ' GROUP BY ' + this.options.group.join(', ');
-			else
-				return ' GROUP BY ' + this.options.group;
 		return '';
 	},
 
-	order : function() {
-		if (this.options.order)
-			if (_.isArray(this.options.order))
-				return ' ORDER BY ' + this.options.order.join(', ');
-			else
-				return ' ORDER BY ' + this.options.order;
-		return '';
+	/**
+	 * We provide a default implementation for limit because it is used by three of the four queries that
+	 * are provided, so this reduces repetition
+	 * @param limits Mixed representing the limits to use. Can be an array or a literal (int or string)
+	 * @return Chainable this pointer
+	 */
+	limit : function(limits) {
+		if (_.isArray(limits)) {
+			this._limit = limits;
+		}
+		else {
+			this._limit = [limits+''];
+		}
+		return this;
 	},
 
-	limit : function() {
-		if (this.options.limit)
-			if (_.isArray(this.options.limit))
-				return ' LIMIT ' + this.options.limit.join(', ');
-			else
-				return ' LIMIT ' + this.options.limit;
-		return '';
+	/**
+	 * We also provide a default implementation for where, because again it is used by thre of the four
+	 * queries that are provided, thereby reducing repetition.
+	 * @param where Key/value mapping, suitable for filter decoding, to be used for WHERE generation
+	 * @param negate Array of fields that should have their where parameters negated, optional.
+	 * @return Chainable this pointer
+	 */
+	where : function(where, negate) {
+		this.where = where || {};
+		this.negate = negate || [];
+		return this;
+	},
+	
+	/**
+	 * Executes the query, calling methods that must be implemented in order to produce the
+	 * query string, and then retrieving the connection object from the db filter given
+	 * @param success Callback to invoke on success, with one argument, the results
+	 * @param failure Callback to invoke on failure, with one argument, the error object
+	 */
+	exec : function(success, failure) {
+		var query = this.buildQuery();
+		this.db.query(query, success, failure);
+	}
+
+});
+
+/**
+ * DeleteQuery is used to construct a DELETE statement. It is simple and defines no additional
+ * interface over the base Query class
+ * @param filter The database filter to use for computing WHERE statements
+ */
+function DeleteQuery(filter) {
+	this.db = filter;
+}
+
+// Inherit/copy methods from Query, and then fill in how to build a DELETE query
+_.extend(DeleteQuery.prototype, Query.prototype, {
+	buildQuery : function() {
+		return 'DELETE FROM ' + this.db.table + this.getWhere() + this.getLimit();
 	}
 });
 
-// Expose the database class as our export
+/**
+ * InsertQuery is used to construct an INSERT statement. It too is very simple, but it must
+ * undefine the where and limit interfaces. The values to insert are specified in the constructor,
+ * using the same decoding features as a where clause would normally do
+ * @param filter The database filter to use for decoding the values
+ * @param values The values to insert when this query is executed
+ */
+function InsertQuery(filter, values) {
+	this.db = filter;
+	this.values = values;
+}
+
+// Inherit/copy methods from Query, and then fill in how to build an INSERT query
+_.extend(InsertQuery.prototype, Query.prototype, {
+	/**
+	 * Remove the unsuitable methods
+	 */
+	where : not_supported,
+	limit : not_supported,
+
+	/**
+	 * Implementation to build a query string
+	 */
+	buildQuery : function() {
+		return 'INSERT INTO ' + this.db.table + this.db.set(this.values);
+	}
+});
+
+/**
+ * An UpdateQuery is used to build UPDATE queries. It is simple, but it must make two filter
+ * decodings, one for the values and the other for the WHERE clause
+ * @param filter The database filter to use for decoding values
+ * @param values The new values to be written in place
+ * @param where The update criteria
+ * @param negate Any negated where relationships
+ */
+function UpdateQuery(filter, values, where, negate) {
+	this.db = filter;
+	this.values = values;
+	this.where(where, negate);
+}
+
+// Inherit/copy methods from Query and then fill in how to build an UPDATE query
+_.extend(UpdateQuery.prototype, Query.prototype, {
+	buildQuery : function() {
+		return 'UPDATE ' + this.db.table + this.db.set(this.values) + this.getWhere() + this.getLimit();
+	}
+});
+
+/**
+ * SelectQuery is used to construct a SELECT statement
+ * @param filter The database filter used to help construct this query
+ * @param where The where object for this filter
+ * @param negate The array of key names
+ */
+function SelectQuery(filter, where, negate) {
+	this.db = filter;
+	this.where(where, negate);
+}
+
+// Inherit/copy all of the methods from Query, and then fill in the ones we need to change
+_.extend(SelectQuery.prototype, Query.prototype, {
+	_fields : [],		//!< List of fields+names to populate select queries
+	_group : [],		//!< List of group by parameters
+	_order : [],		//!< List of order by parameters
+
+	/**
+	 * Accept parameters to be used for the GROUP BY clause
+	 * @param groups Mixed, array of things to group or a single literal for grouping
+	 * @return Chainable this pointer
+	 */
+	group : function(groups) {
+		if (_.isArray(groups)) {
+			this._group = this._group.concat(groups);
+		}
+		else {
+			this._group = this._group.concat([groups]);
+		}
+		return this;
+	},
+
+	/**
+	 * Accept a list of fields that should be used for the select query. Fields may be included
+	 * with an optoinal alias as well, which should be specified as an array in that case.
+	 * @param fields Array of fields to add, which should be strings or arrays of two strings
+	 * @return Chainable this pointer
+	 */
+	fields : function(fields) {
+		this._fields = this._fields.concat(fields);
+		return this;
+	},
+
+	/**
+	 * Accept a list of things for the order by clause, as an array. Optionally, if ascending/descending
+	 * order should be specified (i.e. not default), then the option should be an array with the field name
+	 * in the 0th index, and either ASC or DESC in the 1st index.
+	 * @param orders Array of order by subclauses to include
+	 * @return Chainable this pointer
+	 */
+	order : function(orders) {
+		this._order = this._order.concat(orders);
+		return this;
+	},
+
+	/**
+	 * Returns the group by clause or an empty string if one isn't present
+	 * @return String the GROUP BY part of this select statement
+	 */
+	getGroupBy : function() {
+		if (this._group.length > 0) {
+			return ' GROUP BY ' + this._group.join(', ');
+		}
+		return '';
+	},
+
+	/**
+	 * Returns the order by clause or an empty string if one isn't present
+	 * @return String the ORDER BY part of this select statement
+	 */
+	getOrderBy : function() {
+		if (this._order.length > 0) {
+			return ' ORDER BY ' + _.map(this._order, function(v) {
+				if (_.isArray(v))
+					return v[0] + ' ' + v[1];
+				return v;
+			}).join(', ');
+		}
+		return '';
+	},
+
+	/**
+	 * Returns the fields, or * if no fields were specified. Also supports
+	 * renaming fields if they are passed as an array
+	 * @return String the select fields listing for this query
+	 */
+	getFields : function() {
+		if (this._fields.length > 0) {
+			return _.map(this._fields, function(v) {
+				if (_.isArray(v))
+					return v[0] + ' AS ' + v[1];
+				return v;
+			}).join(', ');
+		}
+		return '*';
+	},
+	
+	buildQuery : function() {
+		return 'SELECT ' + this.getFields() + ' FROM ' + this.db.table + this.getWhere() + this.getGroupBy() + this.getOrderBy() + this.getLimit();
+	}
+	
+});
+
+// Expose the database class as our export, but not the query classes, because those are only produced by us
 module.exports = db;
+
