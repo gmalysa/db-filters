@@ -17,8 +17,6 @@ var mysql = require('mysql');
 var crypto = require('crypto');
 var fs = require('fs');
 
-var logger = require('./logger');
-
 /**
  * Constructor for the db filter takes options to define the table that it will be
  * used to filter
@@ -630,12 +628,9 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 	 */
 	on : function() {
 		var that = this;
-		logger.var_dump(arguments);
 		_.each(Array.prototype.slice.call(arguments), function(v) {
-			logger.debug('', 'Pushed on clause');
 			that._on.push(v);
 		});
-		logger.var_dump(this._on);
 		return this;
 	},
 
