@@ -17,6 +17,8 @@ var mysql = require('mysql');
 var crypto = require('crypto');
 var fs = require('fs');
 
+var logger = require('./logger');
+
 /**
  * Constructor for the db filter takes options to define the table that it will be
  * used to filter
@@ -38,6 +40,7 @@ _.extend(db, {
 	datetime_t : 3,			//!< Indicates that a field is a DATETIME or TIMESTAMP type
 	timestamp_t : 3,		//!< Alias for DATETIME, as both TIMESTAMP and DATETIME are implemented the same way
 	varchar_t : 4,			//!< Should be used in an array with the length of the field, and data will be truncated
+	text_t : 5,				//!< Long text field. Falls back to mysql.escape(). Included so that we can add all fields to the declaration
 	
 	// Logging levels
 	l_debug : 3,			//!< Provides debugging-quality output, including verbose query information and incorrect usage info (i.e. calling limit() on an InsertQuery)
@@ -194,6 +197,7 @@ _.extend(db.prototype, {
 				that.queries[key] = {'count' : 1, 'sql' : query};
 			}
 
+			db.log(db.l_debug, query);
 			that.conn.query(query, function(err, rows) {
 				if (err) {
 					failure(_.extend(err, {'query' : query}));
@@ -225,10 +229,11 @@ _.extend(db.prototype, {
 	 * suitable for use as a WHERE clause
 	 * @param where Object describing the filter to generate the where clause
 	 * @param negate Array of keys to represent with a negative relationship
+	 * @param useName Should the table name be prefixed onto the key values?
 	 * @return String suitable for direct inclusion as a WHERE clause
 	 */
-	where : function(where, negate) {
-		var result = this.decode_filter(where, negate, ' AND ');
+	where : function(where, negate, useName) {
+		var result = this.decode_filter(where, negate, ' AND ', useName);
 		if (result.length > 0)
 			return ' WHERE ' + result;
 		return '';
@@ -241,7 +246,7 @@ _.extend(db.prototype, {
 	 * @return String suitable for direct inclusion as a SET clause
 	 */
 	set : function(values) {
-		var result = this.decode_filter(values, [], ', ');
+		var result = this.decode_filter(values, [], ', ', false);
 		if (result.length > 0)
 			return ' SET ' + result;
 		return '';
@@ -253,15 +258,16 @@ _.extend(db.prototype, {
 	 * @param params Object whose keys and values will be combined as pairs to form the subclause
 	 * @param negate Array of key names whose relationship should be inverted
 	 * @param sep The separator used to join the resulting terms together
+	 * @param useName Should the table name be included in field names?
 	 * @return String The terms in the params object, decoded into SQL-compatible format
 	 */
-	decode_filter : function(params, negate, sep) {
+	decode_filter : function(params, negate, sep, useName) {
 		var terms = [];
 		var that = this;
 
 		_.each(params, function(v, k) {
 			var invert = negate[k] ? true : false;
-			that.process(k, v, invert, terms);
+			that.process(k, v, invert, terms, useName);
 		});
 
 		return terms.join(sep);
@@ -274,19 +280,34 @@ _.extend(db.prototype, {
 	 * @param value The value to use for the column
 	 * @param negate Should the relationship be inverted (i.e. IN becomes NOT IN)
 	 * @param terms Array to store terms to. Arrays are passed by reference in javascript
+	 * @param useName Should the table name be used when printing field names?
 	 */
-	process : function(key, value, negate, terms) {
+	process : function(key, value, negate, terms, useName) {
 		if (this.special[key]) {
-			this.special[key].call(this, key, value, negate, terms);
+			this.special[key].call(this, key, value, negate, terms, useName);
 		}
 		else if (_.isArray(value)) {
 			var values = _.map(value, _.bind(handle_type, this, key));
 			if (values.length > 0)
-				terms.push(mysql.esapeId(key) + (negate ? 'NOT IN (' : 'IN (') + values.join(', ') + ')');
+				terms.push(this.escapeKey(key, useName) + (negate ? 'NOT IN (' : 'IN (') + values.join(', ') + ')');
 		}
 		else {
-			terms.push(mysql.escapeId(key) + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
+			terms.push(this.escapeKey(key, useName) + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
 		}
+	},
+
+	/**
+	 * Generates the escaped key name with optional table prefixing
+	 * @param key The key name to escape
+	 * @param prefix Should the key/field be prefixed with table name?
+	 * @return String the escaped and optionally prefixed field name
+	 */
+	escapeKey : function(key, prefix) {
+		var rtn = '';
+		if (prefix) {
+			rtn = mysql.escapeId(this.table) + '.';
+		}
+		return rtn + mysql.escapeId(key);
 	},
 
 	/**
@@ -371,9 +392,12 @@ function not_supported() {
 _.extend(Query.prototype, {
 	db : null,				//!< Filter instance that is used to decode arguments
 	useTableName : false,	//!< Should the table name be used when giving column names in the query? (should be true for joins)
+	isJoin : false,			//!< Is this a join query now?
 	_where : {},			//!< Key used to define where clauses
 	_negate : [],			//!< Array of fields to negate
 	_limit : [],			//!< List of limit parameters
+	_joins : [],			//!< List of joined tables
+	_on : [],				//!< Array of join ON criteria
 
 	/**
 	 * These three exist for the SELECT query only, so we don't provide global implementations
@@ -392,7 +416,7 @@ _.extend(Query.prototype, {
 	 * @return String verbatim WHERE clause, will be empty if there are no restrictions
 	 */
 	getWhere : function() {
-		return this.db.where(this.where, this.negate);
+		return this.db.where(this.where, this.negate, this.useTableName);
 	},
 
 	/**
@@ -459,6 +483,10 @@ function DeleteQuery(filter) {
 
 // Inherit/copy methods from Query, and then fill in how to build a DELETE query
 _.extend(DeleteQuery.prototype, Query.prototype, {
+	/**
+	 * Builds the final query that is sent to SQL
+	 * @return String SQL query
+	 */
 	buildQuery : function() {
 		return 'DELETE FROM ' + this.db.table + this.getWhere() + this.getLimit();
 	}
@@ -485,7 +513,8 @@ _.extend(InsertQuery.prototype, Query.prototype, {
 	limit : not_supported,
 
 	/**
-	 * Implementation to build a query string
+	 * Builds the final query that is sent to SQL
+	 * @return String SQL query
 	 */
 	buildQuery : function() {
 		return 'INSERT INTO ' + this.db.table + this.db.set(this.values);
@@ -508,6 +537,10 @@ function UpdateQuery(filter, values, where, negate) {
 
 // Inherit/copy methods from Query and then fill in how to build an UPDATE query
 _.extend(UpdateQuery.prototype, Query.prototype, {
+	/**
+	 * Builds the final query that is sent to SQL
+	 * @return String SQL query
+	 */
 	buildQuery : function() {
 		return 'UPDATE ' + this.db.table + this.db.set(this.values) + this.getWhere() + this.getLimit();
 	}
@@ -569,6 +602,44 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 	},
 
 	/**
+	 * Joins another table to this query. If the join type is not specified, then it defaults
+	 * to a LEFT JOIN.
+	 * @param filter The filter to join against. This should be an instance of the db class
+	 * @param type The join type, optional, defaults to 'LEFT,' but may be INNER or RIGHT as well
+	 * @return Chainable this pointer
+	 */
+	join : function(filter, type) {
+		type = type || 'LEFT';
+		this._joins.push({
+			'filter' : filter,
+			'type' : type
+		});
+		this.isJoin = true;
+		this.useTableName = true;
+		return this;
+	},
+
+	/**
+	 * Specifies the ON condition for the join. Each argument is taken as a pair of conditions and
+	 * should be an object whose key indicates the numerical index of the table and whose value is the
+	 * field to be specified. For instance, on(['id', 'userId']) would specify one ON clause comparing
+	 * t0.id to t1.userId. Mutliple conditions can be chained with successive calls to on() or by passing
+	 * them as additional parameters
+	 * @param varargs, Each is an array of ON details
+	 * @return Chainable this pointer
+	 */
+	on : function() {
+		var that = this;
+		logger.var_dump(arguments);
+		_.each(Array.prototype.slice.call(arguments), function(v) {
+			logger.debug('', 'Pushed on clause');
+			that._on.push(v);
+		});
+		logger.var_dump(this._on);
+		return this;
+	},
+
+	/**
 	 * Returns the group by clause or an empty string if one isn't present
 	 * @return String the GROUP BY part of this select statement
 	 */
@@ -609,9 +680,52 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 		}
 		return '*';
 	},
+
+	/**
+	 * Retrieves the ON clause that comes up in a join expression
+	 * @param tables The names of the tables indexed in the proper order for inclusion
+	 * @return String the ON clause, empty if there isn't a join happening
+	 */
+	getOnClause : function(tables) {
+		if (this._on.length > 0) {
+			// Probably the most functional-ish piece of code I've ever written
+			// Map each _on entry to ... and separated by a ,
+			return ' ON ' + _.map(this._on, function(v) {
+				// its values mapped to ... and separated by an =
+				return _.map(v, function(v, k) {
+					// the table name for the key and the escaped identifier
+					return tables[k] + '.' + mysql.escapeId(v);
+				}).join(' = ');
+			}).join(' AND ');
+
+			// I.e. this turns [['id', 'userId'], {0:'id', 2:'adminId'}] into
+			// ON t0.`id` = t1.`userId`, t0.`id` = t2.`adminId`
+		}
+		return '';
+	},
+
+	/**
+	 * Returns the table name portion of the select statement, which will either be
+	 * just the one table, or expand to include all the proper subclauses for the
+	 * join statement
+	 * @return String table name portion of query
+	 */
+	getTableName : function() {
+		var filters = [this.db].concat(_.map(this._joins, function(v) { return v.filter; }));
+		var tableNames = _.map(filters, function(v) { return v.table; });
+		var tables = [this.db.table].concat(_.map(this._joins, function(v) {
+			return v.type + ' JOIN ' + v.filter.table;
+		}));
+
+		return tables.join(' ') + this.getOnClause(tableNames);
+	},
 	
+	/**
+	 * Builds the final query that is sent to SQL
+	 * @return String SQL query
+	 */
 	buildQuery : function() {
-		return 'SELECT ' + this.getFields() + ' FROM ' + this.db.table + this.getWhere() + this.getGroupBy() + this.getOrderBy() + this.getLimit();
+		return 'SELECT ' + this.getFields() + ' FROM ' + this.getTableName() + this.getWhere() + this.getGroupBy() + this.getOrderBy() + this.getLimit();
 	}
 	
 });
