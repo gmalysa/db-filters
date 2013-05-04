@@ -134,6 +134,7 @@ _.extend(db.prototype, {
 	 * when complete
 	 * @param where Object used to specify what we're selecting by
 	 * @param negate Array used to specify any negative relationships in the where, optional
+	 * @return Query object that can have its properties modified before executing
 	 */
 	select : function(where, negate) {
 		negate = negate || [];
@@ -143,6 +144,7 @@ _.extend(db.prototype, {
 	/**
 	 * Creates and executes an INSERT query for the options given
 	 * @param values The object to be inserted to the db
+	 * @return Query object that can have its properties modified before executing
 	 */
 	insert : function(values) {
 		return new InsertQuery(this, values);
@@ -153,6 +155,7 @@ _.extend(db.prototype, {
 	 * @param update The new values to be written
 	 * @param where Object used to specify what to update
 	 * @param negate Any inverted relationships in where, optional
+	 * @return Query object that can have its properties modified before executing
 	 */
 	update : function(update, where, negate) {
 		negate = negate || [];
@@ -163,6 +166,7 @@ _.extend(db.prototype, {
 	 * Creates and executes a DELETE query for the options given
 	 * @param where Object specifying what to delete
 	 * @param negate Any inverted relationships in where, optional
+	 * @return Query object that can have its properties modified before executing
 	 */
 	delete : function(where, negate) {
 		negate = negate || [];
@@ -285,9 +289,9 @@ _.extend(db.prototype, {
 			this.special[key].call(this, key, value, negate, terms, useName);
 		}
 		else if (_.isArray(value)) {
-			var values = _.map(value, _.bind(handle_type, this, key));
+			var values = _.map(value, _.bind(this.handle_type, this, key));
 			if (values.length > 0)
-				terms.push(this.escapeKey(key, useName) + (negate ? 'NOT IN (' : 'IN (') + values.join(', ') + ')');
+				terms.push(this.escapeKey(key, useName) + (negate ? ' NOT IN (' : ' IN (') + values.join(', ') + ')');
 		}
 		else {
 			terms.push(this.escapeKey(key, useName) + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
@@ -390,12 +394,9 @@ function not_supported() {
 _.extend(Query.prototype, {
 	db : null,				//!< Filter instance that is used to decode arguments
 	useTableName : false,	//!< Should the table name be used when giving column names in the query? (should be true for joins)
-	isJoin : false,			//!< Is this a join query now?
 	_where : {},			//!< Key used to define where clauses
 	_negate : [],			//!< Array of fields to negate
 	_limit : [],			//!< List of limit parameters
-	_joins : [],			//!< List of joined tables
-	_on : [],				//!< Array of join ON criteria
 
 	/**
 	 * These three exist for the SELECT query only, so we don't provide global implementations
@@ -414,7 +415,7 @@ _.extend(Query.prototype, {
 	 * @return String verbatim WHERE clause, will be empty if there are no restrictions
 	 */
 	getWhere : function() {
-		return this.db.where(this.where, this.negate, this.useTableName);
+		return this.db.where(this._where, this._negate, this.useTableName);
 	},
 
 	/**
@@ -445,15 +446,15 @@ _.extend(Query.prototype, {
 	},
 
 	/**
-	 * We also provide a default implementation for where, because again it is used by thre of the four
+	 * We also provide a default implementation for where, because again it is used by three of the four
 	 * queries that are provided, thereby reducing repetition.
 	 * @param where Key/value mapping, suitable for filter decoding, to be used for WHERE generation
 	 * @param negate Array of fields that should have their where parameters negated, optional.
 	 * @return Chainable this pointer
 	 */
 	where : function(where, negate) {
-		this.where = where || {};
-		this.negate = negate || [];
+		this._where = where || {};
+		this._negate = negate || [];
 		return this;
 	},
 	
@@ -560,6 +561,27 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 	_fields : [],		//!< List of fields+names to populate select queries
 	_group : [],		//!< List of group by parameters
 	_order : [],		//!< List of order by parameters
+	_joins : [],		//!< List of table joins to apply
+
+	/**
+	 * Select uses a special where option that allows things to be specified per join index
+	 * @param idx The joined table number. The first joined table is index 0
+	 * @param where Key/value mapping, suitable for filter decoding, to be used for WHERE generation
+	 * @param negate Array of fields that should have their where parameters negated, optional.
+	 * @return Chainable this pointer
+	 */
+	where : function(idx, where, negate) {
+		if (typeof idx == 'number') {
+			this._joins[idx].where = where || {};
+			this._joins[idx].negate = negate || [];
+		}
+		else {
+			// If the index was omitted, use the original behavior on args 0 and 1
+			this._where = idx || {};
+			this._negate = where || [];
+		}
+		return this;
+	},
 
 	/**
 	 * Accept parameters to be used for the GROUP BY clause
@@ -601,18 +623,20 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 
 	/**
 	 * Joins another table to this query. If the join type is not specified, then it defaults
-	 * to a LEFT JOIN.
+	 * to an INNER JOIN, because they do not require ON clauses to be specified (LEFT does).
 	 * @param filter The filter to join against. This should be an instance of the db class
 	 * @param type The join type, optional, defaults to 'LEFT,' but may be INNER or RIGHT as well
 	 * @return Chainable this pointer
 	 */
 	join : function(filter, type) {
-		type = type || 'LEFT';
+		type = type || 'INNER';
 		this._joins.push({
 			'filter' : filter,
-			'type' : type
+			'type' : type,
+			'on' : [],
+			'where' : {},
+			'negate' : []
 		});
-		this.isJoin = true;
 		this.useTableName = true;
 		return this;
 	},
@@ -623,15 +647,46 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 	 * field to be specified. For instance, on(['id', 'userId']) would specify one ON clause comparing
 	 * t0.id to t1.userId. Mutliple conditions can be chained with successive calls to on() or by passing
 	 * them as additional parameters
+	 * @param join Integer join number to apply this on to, optional. Defaults to the latest added.
 	 * @param varargs, Each is an array of ON details
 	 * @return Chainable this pointer
 	 */
 	on : function() {
+		var varargs;
+		var join = this._joins[this._joins.length-1];
+		if (typeof arguments[0] == 'number') {
+			varargs = Array.prototype.slice.call(arguments, 1);
+			join = this._joins[arguments[0]];
+		}
+		else {
+			varargs = Array.prototype.slice.call(arguments);
+		}
+
 		var that = this;
-		_.each(Array.prototype.slice.call(arguments), function(v) {
-			that._on.push(v);
+		_.each(varargs, function(v) {
+			join.on.push(v);
 		});
 		return this;
+	},
+
+	/**
+	 * Update the getWhere() method to support concatenating where clauses from tables that are
+	 * joined onto this query. This means we have to call decode filter directly, rather than using
+	 * the convenience wrapper, because we're reimplementing that on a higher level
+	 * @return WHERE clause that can be concatenated immediately
+	 */
+	getWhere : function() {
+		var wheres = [this.db.decode_filter(this._where, this._negate, ' AND ', this.useTableName)];
+		_.each(this._joins, function(v) {
+			var clause = v.filter.decode_filter(v.where, v.negate, ' AND ', this.useTableName);
+			if (clause.length > 0)
+				wheres.push(clause);
+		}, this);
+
+		var where = wheres.join(' AND ');
+		if (where.length > 0)
+			return ' WHERE ' + where;
+		return '';
 	},
 
 	/**
@@ -681,11 +736,11 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 	 * @param tables The names of the tables indexed in the proper order for inclusion
 	 * @return String the ON clause, empty if there isn't a join happening
 	 */
-	getOnClause : function(tables) {
-		if (this._on.length > 0) {
+	getOnClause : function(on, tables) {
+		if (on.length > 0) {
 			// Probably the most functional-ish piece of code I've ever written
 			// Map each _on entry to ... and separated by a ,
-			return ' ON ' + _.map(this._on, function(v) {
+			return ' ON ' + _.map(on, function(v) {
 				// its values mapped to ... and separated by an =
 				return _.map(v, function(v, k) {
 					// the table name for the key and the escaped identifier
@@ -709,10 +764,10 @@ _.extend(SelectQuery.prototype, Query.prototype, {
 		var filters = [this.db].concat(_.map(this._joins, function(v) { return v.filter; }));
 		var tableNames = _.map(filters, function(v) { return v.table; });
 		var tables = [this.db.table].concat(_.map(this._joins, function(v) {
-			return v.type + ' JOIN ' + v.filter.table;
-		}));
+			return v.type + ' JOIN ' + v.filter.table + this.getOnClause(v.on, tableNames);
+		}, this));
 
-		return tables.join(' ') + this.getOnClause(tableNames);
+		return tables.join(' ');
 	},
 	
 	/**
