@@ -105,6 +105,15 @@ _.extend(db, {
 	log : function(level, msg) {
 		if (level <= db.log_level && db.fn_log)
 			db.fn_log(msg);
+	},
+
+	/**
+	 * Wraps a string to be converted into a LIKE match, rather than an equality test,
+	 * during query generation. These are cheaper than regexes.
+	 * @param str The source string
+	 */
+	Like : function Like(str) {
+		this.source = str;
 	}
 
 });
@@ -265,12 +274,11 @@ _.extend(db.prototype, {
 	 */
 	decode_filter : function(params, negate, sep, useName) {
 		var terms = [];
-		var that = this;
 
 		_.each(params, function(v, k) {
 			var invert = negate[k] ? true : false;
-			that.process(k, v, invert, terms, useName);
-		});
+			this.process(k, v, invert, terms, useName);
+		}, this);
 
 		return terms.join(sep);
 	},
@@ -292,6 +300,12 @@ _.extend(db.prototype, {
 			var values = _.map(value, _.bind(this.handle_type, this, key));
 			if (values.length > 0)
 				terms.push(this.escapeKey(key, useName) + (negate ? ' NOT IN (' : ' IN (') + values.join(', ') + ')');
+		}
+		else if (value instanceof RegExp) {
+			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' REGEXP "'+value.toString().replace(/\\/g, '\\\\') + '"');
+		}
+		else if (value instanceof db.Like) {
+			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' LIKE "'+value.source+'"');
 		}
 		else {
 			terms.push(this.escapeKey(key, useName) + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
