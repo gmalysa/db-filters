@@ -7,9 +7,6 @@
   "repository"    : { "type" : "git", "url" : "https://github.com/gmalysa/db-filters.git" },
   "licenses"      : ["MIT"],
   "main"          : "./db-filters",
-  "scripts"       : { "test": "node test/*-test.js" },
-  "directories"   : { "test": "./test" },
   "dependencies"  : { "underscore" : ">= 1.4.0" },
   "engines"       : { "node": "> 0.8.0" },
-  "private"       : true
 }
