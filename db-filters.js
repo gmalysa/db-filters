@@ -392,7 +392,11 @@ _.extend(db.prototype, {
  * @param filter The db filter instance that defines the table this query acts on
  */
 function Query(filter) {
-	this.db = filter;
+	this.db = filter;				//!< Filter instance that is used to decode arguments
+	this.useTableName = false;			//!< Should the table name be used when giving column names in the query? (should be true for joins)
+	this._where = {};					//!< Key used to define where clauses
+	this._negate = [];					//!< Array of fields to negate
+	this._limit = [];					//!< List of limit parameters
 }
 
 /**
@@ -406,12 +410,6 @@ function not_supported() {
 
 // Add member functions to the query definition
 _.extend(Query.prototype, {
-	db : null,				//!< Filter instance that is used to decode arguments
-	useTableName : false,	//!< Should the table name be used when giving column names in the query? (should be true for joins)
-	_where : {},			//!< Key used to define where clauses
-	_negate : [],			//!< Array of fields to negate
-	_limit : [],			//!< List of limit parameters
-
 	/**
 	 * These three exist for the SELECT query only, so we don't provide global implementations
 	 */
@@ -454,7 +452,7 @@ _.extend(Query.prototype, {
 			this._limit = limits;
 		}
 		else {
-			this._limit = [limits+''];
+			this._limit = [limits];
 		}
 		return this;
 	},
@@ -482,7 +480,6 @@ _.extend(Query.prototype, {
 		var query = this.buildQuery();
 		this.db.query(query, success, failure);
 	}
-
 });
 
 /**
@@ -490,12 +487,14 @@ _.extend(Query.prototype, {
  * interface over the base Query class
  * @param filter The database filter to use for computing WHERE statements
  */
+DeleteQuery.prototype = new Query();
 function DeleteQuery(filter) {
-	this.db = filter;
+	Query.call(this, filter);
 }
 
 // Inherit/copy methods from Query, and then fill in how to build a DELETE query
-_.extend(DeleteQuery.prototype, Query.prototype, {
+DeleteQuery.prototype.constructor = DeleteQuery;
+_.extend(DeleteQuery.prototype, {
 	/**
 	 * Builds the final query that is sent to SQL
 	 * @return String SQL query
@@ -512,13 +511,15 @@ _.extend(DeleteQuery.prototype, Query.prototype, {
  * @param filter The database filter to use for decoding the values
  * @param values The values to insert when this query is executed
  */
+InsertQuery.prototype = new Query();
 function InsertQuery(filter, values) {
-	this.db = filter;
+	Query.call(this, filter);
 	this.values = values;
 }
 
 // Inherit/copy methods from Query, and then fill in how to build an INSERT query
-_.extend(InsertQuery.prototype, Query.prototype, {
+InsertQuery.prototype.constructor = InsertQuery;
+_.extend(InsertQuery.prototype, {
 	/**
 	 * Remove the unsuitable methods
 	 */
@@ -542,14 +543,16 @@ _.extend(InsertQuery.prototype, Query.prototype, {
  * @param where The update criteria
  * @param negate Any negated where relationships
  */
+UpdateQuery.prototype = new Query();
 function UpdateQuery(filter, values, where, negate) {
-	this.db = filter;
+	Query.call(this, filter);
 	this.values = values;
 	this.where(where, negate);
 }
 
 // Inherit/copy methods from Query and then fill in how to build an UPDATE query
-_.extend(UpdateQuery.prototype, Query.prototype, {
+UpdateQuery.prototype.constructor = UpdateQuery;
+_.extend(UpdateQuery.prototype, {
 	/**
 	 * Builds the final query that is sent to SQL
 	 * @return String SQL query
@@ -565,17 +568,20 @@ _.extend(UpdateQuery.prototype, Query.prototype, {
  * @param where The where object for this filter
  * @param negate The array of key names
  */
+SelectQuery.prototype = new Query();
 function SelectQuery(filter, where, negate) {
-	this.db = filter;
+	Query.call(this, filter);
 	this.where(where, negate);
+
+	this._fields = [];		//!< List of fields+names to populate select queries
+	this._group = [];		//!< List of group by parameters
+	this._order = [];		//!< List of order by parameters
+	this._joins = [];		//!< List of table joins to apply
 }
 
 // Inherit/copy all of the methods from Query, and then fill in the ones we need to change
-_.extend(SelectQuery.prototype, Query.prototype, {
-	_fields : [],		//!< List of fields+names to populate select queries
-	_group : [],		//!< List of group by parameters
-	_order : [],		//!< List of order by parameters
-	_joins : [],		//!< List of table joins to apply
+SelectQuery.prototype.constructor = SelectQuery;
+_.extend(SelectQuery.prototype, {
 
 	/**
 	 * Select uses a special where option that allows things to be specified per join index
