@@ -302,10 +302,10 @@ _.extend(db.prototype, {
 				terms.push(this.escapeKey(key, useName) + (negate ? ' NOT IN (' : ' IN (') + values.join(', ') + ')');
 		}
 		else if (value instanceof RegExp) {
-			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' REGEXP "'+value.toString().replace(/\\/g, '\\\\') + '"');
+			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' REGEXP ' + mysql.escape(value.toString().replace(/\\/g, '\\\\')));
 		}
 		else if (value instanceof db.Like) {
-			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' LIKE "'+value.source+'"');
+			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' LIKE ' + mysql.escape(value.source));
 		}
 		else {
 			terms.push(this.escapeKey(key, useName) + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
@@ -392,7 +392,7 @@ _.extend(db.prototype, {
  * @param filter The db filter instance that defines the table this query acts on
  */
 function Query(filter) {
-	this.db = filter;				//!< Filter instance that is used to decode arguments
+	this.db = filter;					//!< Filter instance that is used to decode arguments
 	this.useTableName = false;			//!< Should the table name be used when giving column names in the query? (should be true for joins)
 	this._where = {};					//!< Key used to define where clauses
 	this._negate = [];					//!< Array of fields to negate
