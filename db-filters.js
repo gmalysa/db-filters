@@ -232,7 +232,6 @@ _.extend(db.prototype, {
 			hash.update(query, 'utf8');
 			doquery(hash.digest('hex'));
 		}
-
 	},
 
 	/**
@@ -240,11 +239,11 @@ _.extend(db.prototype, {
 	 * suitable for use as a WHERE clause
 	 * @param where Object describing the filter to generate the where clause
 	 * @param negate Array of keys to represent with a negative relationship
-	 * @param useName Should the table name be prefixed onto the key values?
+	 * @param options @see process for description
 	 * @return String suitable for direct inclusion as a WHERE clause
 	 */
-	where : function(where, negate, useName) {
-		var result = this.decode_filter(where, negate, ' AND ', useName);
+	where : function(where, negate, options) {
+		var result = this.decode_filter(where, negate, ' AND ', options);
 		if (result.length > 0)
 			return ' WHERE ' + result;
 		return '';
@@ -257,7 +256,7 @@ _.extend(db.prototype, {
 	 * @return String suitable for direct inclusion as a SET clause
 	 */
 	set : function(values) {
-		var result = this.decode_filter(values, [], ', ', false);
+		var result = this.decode_filter(values, [], ', ', {});
 		if (result.length > 0)
 			return ' SET ' + result;
 		return '';
@@ -269,15 +268,15 @@ _.extend(db.prototype, {
 	 * @param params Object whose keys and values will be combined as pairs to form the subclause
 	 * @param negate Array of key names whose relationship should be inverted
 	 * @param sep The separator used to join the resulting terms together
-	 * @param useName Should the table name be included in field names?
+	 * @param options @see process for information
 	 * @return String The terms in the params object, decoded into SQL-compatible format
 	 */
-	decode_filter : function(params, negate, sep, useName) {
+	decode_filter : function(params, negate, sep, options) {
 		var terms = [];
 
 		_.each(params, function(v, k) {
 			var invert = negate[k] ? true : false;
-			this.process(k, v, invert, terms, useName);
+			this.process(k, v, invert, terms, options);
 		}, this);
 
 		return terms.join(sep);
@@ -285,43 +284,55 @@ _.extend(db.prototype, {
 
 	/**
 	 * This processes a key/value pair to produce an array of SQL terms for each
-	 * pair.
+	 * pair. The possible options are:
+	 * useName - boolean, should this table's name be emitted
+	 * alias - string, if the table name is used, substitute this alias instead
 	 * @param key The name of the column this value is for
 	 * @param value The value to use for the column
 	 * @param negate Should the relationship be inverted (i.e. IN becomes NOT IN)
 	 * @param terms Array to store terms to. Arrays are passed by reference in javascript
-	 * @param useName Should the table name be used when printing field names?
+	 * @param options Map of option values. Each value is optional
 	 */
-	process : function(key, value, negate, terms, useName) {
+	process : function(key, value, negate, terms, options) {
 		if (this.special[key]) {
-			this.special[key].call(this, key, value, negate, terms, useName);
-		}
-		else if (_.isArray(value)) {
-			var values = _.map(value, _.bind(this.handle_type, this, key));
-			if (values.length > 0)
-				terms.push(this.escapeKey(key, useName) + (negate ? ' NOT IN (' : ' IN (') + values.join(', ') + ')');
-		}
-		else if (value instanceof RegExp) {
-			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' REGEXP ' + mysql.escape(value.toString().replace(/\\/g, '\\\\')));
-		}
-		else if (value instanceof db.Like) {
-			terms.push(this.escapeKey(key, useName) + (negate ? ' NOT' : '') + ' LIKE ' + mysql.escape(value.source));
+			this.special[key].call(this, key, value, negate, terms, options);
 		}
 		else {
-			terms.push(this.escapeKey(key, useName) + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
+			var escapedKey = this.escapeKey(key, options);
+
+			if (_.isArray(value)) {
+				var values = _.map(value, _.bind(this.handle_type, this, key));
+				if (values.length > 0)
+					terms.push(escapedKey + (negate ? ' NOT IN (' : ' IN (') + values.join(', ') + ')');
+			}
+			else if (value instanceof RegExp) {
+				terms.push(escapedKey + (negate ? ' NOT' : '') + ' REGEXP ' + mysql.escape(value.toString().replace(/\\/g, '\\\\')));
+			}
+			else if (value instanceof db.Like) {
+				terms.push(escapedKey + (negate ? ' NOT' : '') + ' LIKE ' + mysql.escape(value.source));
+			}
+			else {
+				terms.push(escapedKey + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
+			}
 		}
 	},
 
 	/**
 	 * Generates the escaped key name with optional table prefixing
+	 * Possible option values that are checked:
+	 * useName - boolean, should this key use the table name
+	 * alias - string, if this table name is used, print this alias instead
 	 * @param key The key name to escape
-	 * @param prefix Should the key/field be prefixed with table name?
+	 * @param options The options for producing this key's representation
 	 * @return String the escaped and optionally prefixed field name
 	 */
-	escapeKey : function(key, prefix) {
+	escapeKey : function(key, options) {
 		var rtn = '';
-		if (prefix) {
-			rtn = mysql.escapeId(this.table) + '.';
+		if (options.useName) {
+			if (options.alias && options.alias.length > 0)
+				rtn = mysql.escapeId(options.alias) + '.';
+			else
+				rtn = mysql.escapeId(this.table) + '.';
 		}
 		return rtn + mysql.escapeId(key);
 	},
@@ -393,7 +404,10 @@ _.extend(db.prototype, {
  */
 function Query(filter) {
 	this.db = filter;					//!< Filter instance that is used to decode arguments
-	this.useTableName = false;			//!< Should the table name be used when giving column names in the query? (should be true for joins)
+	this._options = {					//!< Options array that will be passed to decode_filter()
+		useName : false,
+		alias : ''
+	};
 	this._where = {};					//!< Key used to define where clauses
 	this._negate = [];					//!< Array of fields to negate
 	this._limit = [];					//!< List of limit parameters
@@ -427,7 +441,7 @@ _.extend(Query.prototype, {
 	 * @return String verbatim WHERE clause, will be empty if there are no restrictions
 	 */
 	getWhere : function() {
-		return this.db.where(this._where, this._negate, this.useTableName);
+		return this.db.where(this._where, this._negate, this._options);
 	},
 
 	/**
@@ -622,10 +636,13 @@ _.extend(SelectQuery.prototype, {
 	 * Accept a list of fields that should be used for the select query. Fields may be included
 	 * with an optoinal alias as well, which should be specified as an array in that case.
 	 * @param fields Array of fields to add, which should be strings or arrays of two strings
+	 * @param alias String, optional. Sets the table name alias if present
 	 * @return Chainable this pointer
 	 */
-	fields : function(fields) {
+	fields : function(fields, alias) {
 		this._fields = this._fields.concat(fields);
+		if (alias)
+			this._options.alias = alias;
 		return this;
 	},
 
@@ -655,9 +672,13 @@ _.extend(SelectQuery.prototype, {
 			'type' : type,
 			'on' : [],
 			'where' : {},
-			'negate' : []
+			'negate' : [],
+			'options' : {
+				'useName' :  true,
+				'alias' : ''
+			}
 		});
-		this.useTableName = true;
+		this._options.useName = true;
 		return this;
 	},
 
@@ -696,9 +717,9 @@ _.extend(SelectQuery.prototype, {
 	 * @return WHERE clause that can be concatenated immediately
 	 */
 	getWhere : function() {
-		var wheres = [this.db.decode_filter(this._where, this._negate, ' AND ', this.useTableName)];
+		var wheres = [this.db.decode_filter(this._where, this._negate, ' AND ', this._options)];
 		_.each(this._joins, function(v) {
-			var clause = v.filter.decode_filter(v.where, v.negate, ' AND ', this.useTableName);
+			var clause = v.filter.decode_filter(v.where, v.negate, ' AND ', v.options);
 			if (clause.length > 0)
 				wheres.push(clause);
 		}, this);
@@ -781,11 +802,21 @@ _.extend(SelectQuery.prototype, {
 	 * @return String table name portion of query
 	 */
 	getTableName : function() {
-		var filters = [this.db].concat(_.map(this._joins, function(v) { return v.filter; }));
-		var tableNames = _.map(filters, function(v) { return v.table; });
-		var tables = [this.db.table].concat(_.map(this._joins, function(v) {
-			return v.type + ' JOIN ' + v.filter.table + this.getOnClause(v.on, tableNames);
-		}, this));
+		// Create primary table reference
+		var tables = [this.db.table + (this._options.alias.length > 0 ? ' AS ' + this._options.alias : '')];
+		
+		if (this._joins.length > 0) {
+			// Because we're joining, construct a list of table names/aliases for ON generation
+			var tableNames = [this._options.alias.length > 0 ? this._options.alias : this.db.table];
+			tableNames = tableNames.concat(_.map(this._joins, function(v) {
+				return v.options.alias.length > 0 ? v.options.alias : v.filter.table;
+			}));
+
+			// Add entries for joined tables
+			tables = tables.concat(_.map(this._joins, function(v) {
+				return v.type + ' JOIN ' + v.filter.table + (v.options.alias.length > 0 ? ' AS '+v.options.alias : '') + this.getOnClause(v.on, tableNames);
+			}, this));
+		}
 
 		return tables.join(' ');
 	},
