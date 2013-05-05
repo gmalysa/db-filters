@@ -644,7 +644,8 @@ _.extend(SelectQuery.prototype, {
 	 */
 	fields : function(join, fields, alias) {
 		if (typeof join == 'number') {
-			this._joins[join].fields.concat(fields);
+			this._joins[join].fields = this._joins[join].fields.concat(fields);
+			logger.var_dump(this._joins[join].fields);
 			if (alias)
 				this._joins[join].alias = alias;
 		}
@@ -721,10 +722,7 @@ _.extend(SelectQuery.prototype, {
 			varargs = Array.prototype.slice.call(arguments);
 		}
 
-		var that = this;
-		_.each(varargs, function(v) {
-			join.on.push(v);
-		});
+		join.on = join.on.concat(varargs);
 		return this;
 	},
 
@@ -818,19 +816,18 @@ _.extend(SelectQuery.prototype, {
 
 	/**
 	 * Returns the fields used for this query. Combines field selections from all tables
-	 * that are joined together, retrieving fields for each one.
+	 * that are joined together, retrieving fields for each one. If we're not doing a join,
+	 * then the table alias is left off of the fields, because it is unnecessary
 	 * @return Complete fields listing for this query
 	 */
 	getFields : function() {
-		var fields = [this.getTableFields(this._fields, this.getTableAlias())];
-
 		if (this._joins.length > 0) {
-			fields = fields.concat(_.map(this._joins, function(v, k) {
+			var fields = [this.getTableFields(this._fields, this.getTableAlias())];
+			return fields.concat(_.map(this._joins, function(v, k) {
 				return this.getTableFields(v.fields, this.getTableAlias(k));
-			}, this));
+			}, this)).join(', ');
 		}
-
-		return fields.join(', ');
+		return this.getTableFields(this._fields, '');
 	},
 
 	/**

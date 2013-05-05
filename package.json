@@ -1,6 +1,6 @@
 {
   "name"          : "db-filters",
-  "version"       : "0.1.0",
+  "version"       : "0.1.1",
   "description"   : "Systematic database query generation and abstraction",
   "keywords"      : ["database", "query", "generate", "filter", "mysql"],
   "author"        : "Greg Malysa <gmalysa@stanford.edu>",
@@ -8,5 +8,5 @@
   "licenses"      : ["MIT"],
   "main"          : "./db-filters",
   "dependencies"  : { "underscore" : ">= 1.4.0" },
-  "engines"       : { "node": "> 0.8.0" },
+  "engines"       : { "node": "> 0.8.0" }
 }
