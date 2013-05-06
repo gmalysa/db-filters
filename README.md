@@ -13,7 +13,7 @@ The premise of filtering data for query generation moves the task of translating
 
 ## Usage
 
-''Note:'' db-filters requires the mysql package. This is installed automatically by npm during the installation process, but you must first configure mysql before you can start issuing queries to your database. Additionally, you will supply a connection object to each filter prior to use; this will be discussed in more detail later.
+**Note:** db-filters requires the mysql package. This is installed automatically by npm during the installation process, but you must first configure mysql before you can start issuing queries to your database. Additionally, you will supply a connection object to each filter prior to use; this will be discussed in more detail later.
 
 ### Setup
 
@@ -34,7 +34,7 @@ last_login : db.datetime_t
 var users = new db('users', cols, {});
 ```
 
-We will ignore the third parameter to the constructor, ```special```, for now, because it provides advanced functionality. Because table definitions are relatively static and should be separate from the rest of your code, db-filters provides a convenience initialization method. It accepts a path to a folder that (presumably) contains filter definitions, where each is a single node.js module that exports a single function, which is used to create and save the filter. For example, our above filter would be implemented as:
+We will ignore the third parameter to the constructor, `special`, for now, because it provides advanced functionality. Because table definitions are relatively static and should be separate from the rest of your code, db-filters provides a convenience initialization method. It accepts a path to a folder that (presumably) contains filter definitions, where each is a single node.js module that exports a single function, which is used to create and save the filter. For example, our above filter would be implemented as:
 
 ```javascript
 module.exports = function(db) {
@@ -84,7 +84,49 @@ Once a select query has been created, it can be modified through many additional
 
 ```limit()``` limits the number of queries returned. If a single integer parameter is given, the select query will return at most that many rows. If an array is given, it will return at most array[1] rows starting at offset array[0].
 
-```order()```
+```order()``` specifies the order of results to be returned. Its only parameter is an array of field names to order by. If a non-default ordering (such as ascending or descending being set explicitly) is required, then each entry in the array should be an array, with the 0th index storing the field name, and the 1st index storing either ASC or DESC to specify the ordering. **NOTE:** This function will change in v0.1.2 as part of the function abstraction implementation.
+
+```group()``` specifies which fields to group by in the results. Its only parameter is an array of field names to group by. Like `order()`, `group()` will undergo significant improvements in v0.1.2 and its parameters are likely to change format.
+
+```fields()``` specifies which fields should be retrieved by a query and also allows for table aliases to be specified. The default is * for SQL statements, meaning all fields. If this is undesirable, call fields. It accepts either two arguments as ```fields(fields, alias)``` or ```fields(join, fields, alias)```. The fields parameter should be an array of field names. The alias parameter is optional, and if specified will rename the table in question, with regard to this query. Aliases are only emitted in the query itself for JOIN queries. If the first parameter, join, is specified, it is the index of JOINed table whose fields are specified, starting with 0 for the first JOINed table. This is best explained by example:
+
+```javascript
+db.users.select(...)
+    .fields(['id', 'name', 'email'])
+    .exec()
+```
+
+will retrieve only the id, name, and email of all users in the table. In a join, with another table "posts" whose definition is omitted, you might write this instead:
+
+```javascript
+db.posts.select(...)
+    .fields(['id', 'threadId', 'userId'], 'p')
+    .join(db.users, 'LEFT')
+    .fields(0, ['name', 'registered'], 'u')
+    .on(['userId', 'id'])
+    .exec();
+```
+
+which would return an object with keys p.id, p.threadId, p.userId, u.name, and u.registered, where u.id == p.userId. The syntax for ```join()``` and ```on()``` will be explained in a moment.
+
+```join()``` is used to create multitable JOIN queries by combining filters. It accepts two parameters: the first specifies which filter to join to, and the second specifies the type of join. If the type is omitted, it will default to an INNER JOIN, because an INNER JOIN does not require an on() clause to be specified. The first argument may optionally be an array, in which case array[0] should be the filter instance, and array[1] is the alias to use for the joined table. The alias for the joined table may also be specified with a call to ```fields()```. The parameters for `join()` will likely undergo minor changes in v0.1.2.
+
+```on()``` specifies the conditions for a join and traditionally goes in the ON portion of the clause. This relates keys from two (or more) tables. Note that because ON statements are actually a part of a specific join, it is possible to have multiple calls to on() to specify the behavior for different joins, in a join involving three or more tables. It accepts a variable number of arguments. The first argument, which is optional, is an integer specifying which join this on clause applies to.
+
+The remaining arguments are all arrays or objects. Each should have exactly two numerical keys, corresponding to tables in the query, and values corresponding to fields to relate together. Currently, all relationships are strict equality. This is again best specified by example. For the earlier join,
+
+```javascript
+db.posts.select(...)
+    .fields(['id', 'threadId', 'userId'], 'p')
+    .join(db.users, 'LEFT')
+    .fields(0, ['name', 'registered'], 'u')
+    .on(['userId', 'id'])
+    .exec();
+```
+
+we'd see something along the lines of LEFT JOIN `users` AS `u` ON `p`.`userId` = `u`.`id`. If three tables are included, and a relationship is to be established between the first and third tables, then the object form is more useful: on({0:'userId', 2: 'id'}) to produce ON t0.`userId` = t2.`id`. The parameters for `on()` will likely undergo minor changes for v0.1.2.
+
+Finally, additional parameters can be supplied for the WHERE clause, relating to joined tables, by calling ```where(join, where, negate)```. The where and negate parameters are the same as described earlier, but the join parameter is an index indicating which joined filter this set of conditions applies to.
 
 ### insert(values)
 
@@ -99,11 +141,15 @@ Finally, the query method can be used to send raw queries that you write by hand
 
 ## TODOs
 
-Currently, select.order() and select.group() do not allow specifying fields from joined tables in the order by or group by clauses. This will be addressed in v0.1.2.
+Currently, select.order() and select.group() do not allow specifying fields from joined tables in the order by or group by clauses. This will be addressed in v0.1.2, and these functions will see significant changes to how they behave.
 
 Specifying functions of fields is not supported (i.e. will produce garbage SQL) for multitable JOINs, because it will attempt to prefix the table name onto the "field name" that actually consists of a function wrapping a field. An abstraction for functions will be introduced (eventually) to resolve this issue, hopefully in v0.1.2 or v0.1.3.
 
-Complex relationships in WHERE conditions (or in SET clauses) are not supported. That is, you couldn't generate a query like "SET `count` = `count` + 1," nor could you produce something like "WHERE SUM(income) > threshold" without using a special handler. The latter will be resolved by a combination of introducing function abstractions as well as a scheme for generalizing the types of relationships to generate for key/value pairs (the goal here is simplicity of user code and reasonable abstractions, so simply slapping on more options, especially SQL-specific ones, to do this is suboptimal).
+select.join() and select.on() need to be improved to accept parameters with better formatting. Possibly introduce aliases for left, inner, and right joins in order to simplify usage in user code.
+
+Poor consistency for table numbering between where(), fields(), on(), etc. This needs to be made uniform, so that index 0 is always the primary table and index 1 is the first joined table, where currently 0 is sometimes the primary table and sometimes it is the first joined table.
+
+Complex relationships in WHERE conditions (or in SET clauses) are not supported. That is, you couldn't generate a query like "SET `count` = `count` + 1," nor could you produce something like "WHERE SUM(income) > threshold" without using a special handler. The latter will be resolved by a combination of introducing function abstractions as well as a scheme for generalizing the types of relationships to generate for key/value pairs (the goal here is simplicity of user code and reasonable abstractions, so simply slapping on more options, especially SQL-specific ones, to do this is suboptimal). The former is postponed until a reasonable approach presents itself.
 
 There is no good way to specify cross-table relationships in WHERE clauses on multitable JOINs. This is something I'm investigating (suggestions are welcome) to implement in a manner that is consistent with the idea of presenting a simple, flexible, and powerful interface for assigning these types of constraints, but as of yet I don't have a way to reduce this to filtering operations. This means that the only cross-table relationships that are supported are strict equality in the ON clause.
 
