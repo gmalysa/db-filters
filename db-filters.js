@@ -17,8 +17,6 @@ var mysql = require('mysql');
 var crypto = require('crypto');
 var fs = require('fs');
 
-var logger = require('./logger');
-
 /**
  * Constructor for the db filter takes options to define the table that it will be
  * used to filter
@@ -51,6 +49,9 @@ _.extend(db, {
 	// Static information about logging
 	fn_log : null,			//!< Callback for logging, takes one parameter, the message
 	log_level : db.l_none,	//!< Default log level
+
+	// A place to store filter definitions on the main tree
+	filters : {},			//!< Map of filter names to filter definitions, where stuff should attach itself
 
 	/**
 	 * Static initialization routine, this is used to take a folder of filter definitions
@@ -645,7 +646,6 @@ _.extend(SelectQuery.prototype, {
 	fields : function(join, fields, alias) {
 		if (typeof join == 'number') {
 			this._joins[join].fields = this._joins[join].fields.concat(fields);
-			logger.var_dump(this._joins[join].fields);
 			if (alias)
 				this._joins[join].alias = alias;
 		}
