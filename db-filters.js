@@ -101,9 +101,11 @@ _.extend(db, {
 	 * request
 	 */
 	clone_filters : function() {
-		return _.map(db.filters, function(v) {
-			return v.clone();
+		var filters = {};
+		_.each(db.filters, function(v, k) {
+			filters[k] = v.clone();
 		});
+		return filters;
 	},
 
 	/**
@@ -167,7 +169,7 @@ _.extend(db.prototype, {
 	 */
 	clone : function() {
 		return new db(this.table, this.cols, this.special);
-	}
+	},
 
 	/**
 	 * Callback used to store the mysql connection that should be used. This will
