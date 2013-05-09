@@ -47,7 +47,7 @@ registered : db.datetime_t,
 last_login : db.datetime_t
 };
 
-db.filters.users = new db('users', cols, {});
+db.add_filter('users', new db('users', cols, {}));
 };
 ```
 
@@ -58,7 +58,7 @@ Once a filter has been created, it supports four primary operations: select, ins
 Thus, to use our new filter to select all users with status set to 1, the code looks like this:
 
 ```javascript
-// conn already initialized and has database set properly
+// conn already initialized from node-mysql
 db.filters.users.set_conn(conn);
 db.filters.users.select({status : 1})
     .exec(success_cb, failure_cb);
@@ -136,6 +136,22 @@ Finally, additional parameters can be supplied for the WHERE clause, relating to
 
 ### query(sql, success_cb, failure_cb)
 Finally, the query method can be used to send raw queries that you write by hand to the database, but it should be avoided. This is used internally by exec() to send queries, but it is also available to user code in the event that an appropriate query cannot be created using the other methods, but of course this breaks the language abstraction and ties you to your database language and engine. If you're forced to use query(), but you think that it should be easy to generate the query, please post an issue for it, and then it might be added.
+
+## Other Useful Functions
+
+The global db object also has some useful functions. These exist to simplify the process of managing filter instances and helping to maintain separation between requests.
+
+### db.clone_filters()
+
+Each filter should only be used to handle a single (or small number of) request, because it tracks statistics on queries issued, so if you use it for your entire site, the memory usage will eventually consume all system ram (maybe query tracking should be opt-in, rather than always on, since production sites probably don't care about this behavior...). Therefore, you should use db.clone_filters() to generate a copy of all of the defined filters for your request.
+
+### db.set_conn_all(conn, filters)
+
+This exists as a convenience method to set the given connection on all filter instances in the filters argument (not the global list of filter templates).
+
+### instance.clone()
+
+This returns a clone of the filter instance; that is, one that has the same table name, column definitions, and special handler capabilities, but does not share any (mutable) state with the original. This function is used internally by db.clone_filters(), and if you don't want to clone all of your filters at once, you can use it too.
 
 ## Examples
 
