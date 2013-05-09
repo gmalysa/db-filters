@@ -25,6 +25,9 @@ var fs = require('fs');
  * @param special Any special fields that will be handled externally with a callback
  */
 function db(table, columns, special) {
+	this.queries = {};		//!< Queries that have been executed, for stats and information
+	this.conn = null;		//!< The connection to use for SQL query execution
+
 	this.table = table;
 	this.columns = columns || {};
 	this.special = special || {};
@@ -51,7 +54,7 @@ _.extend(db, {
 	log_level : db.l_none,	//!< Default log level
 
 	// A place to store filter definitions on the main tree
-	filters : {},			//!< Map of filter names to filter definitions, where stuff should attach itself
+	filters : {},			//!< Map of filter names to filter definitions, where stuff is stored
 
 	/**
 	 * Static initialization routine, this is used to take a folder of filter definitions
@@ -76,9 +79,43 @@ _.extend(db, {
 
 			// Each filter should be implemented as a single function that takes the db object
 			// and then creates an instance with appropriate column/table/special info, and saves
-			// it as a static property on database
+			// it with add_filter()
 			var filter = require(path+'/'+f);
 			filter(db);
+		});
+	},
+
+	/**
+	 * Adds a new filter definition to the tracking list
+	 * @param name Table/reference name for the filter
+	 * @param filter The filter definition (an instance of db)
+	 */
+	add_filter : function(name, filter) {
+		db.filters[name] = filter;
+	},
+
+	/**
+	 * Clones all of the filters that have been defined and returns them as a single hash with the
+	 * same reference names they were defined as. Convenience provided for the instance clone method
+	 * in the event that you simply want to copy all of your filters in one line of code, for a given
+	 * request
+	 */
+	clone_filters : function() {
+		return _.map(db.filters, function(v) {
+			return v.clone();
+		});
+	},
+
+	/**
+	 * Sets a single connection object to all of the filters given in the supplied connection, again
+	 * useful to reduce copy/pasting code. This does not support invoking the callback available to
+	 * set_conn, for now
+	 * @param conn The connection object to store in each filter
+	 * @param filters The collection of filters to store connections in
+	 */
+	set_conn_all : function(conn, filters) {
+		_.each(filters, function(v) {
+			v.set_conn(conn, null);
 		});
 	},
 
@@ -123,11 +160,14 @@ _.extend(db, {
 
 // Member/instance data definition
 _.extend(db.prototype, {
-	table : '',			//!< Table name
-	columns : {},		//!< Non-string columns of built-in type
-	special : {},		//!< Special fields and their handlers
-	queries : {},		//!< Queries that have been executed, for stats and information
-	conn : null,		//!< The connection to use for SQL query execution
+	/**
+	 * Because filters are defined globally but should not be shared between requests, each
+	 * request should clone the filters that it wants to use during database acquisition
+	 * @return a clone of this with no shared state
+	 */
+	clone : function() {
+		return new db(this.table, this.cols, this.special);
+	}
 
 	/**
 	 * Callback used to store the mysql connection that should be used. This will
