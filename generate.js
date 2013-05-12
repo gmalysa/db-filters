@@ -13,8 +13,6 @@ var fl = require('flux-link');
 var spy = require('spyglass');
 var gls = new spy();
 
-var logger = require('./logger');
-
 c.version('0.1.0')
 	.option('-H, --host <localhost>', 'MySQL host address')
 	.option('-u, --user <root>', 'MySQL user')
@@ -24,12 +22,23 @@ c.version('0.1.0')
 	.option('-o, --output <./filters>', 'Output path for filter definitions')
 	.parse(process.argv);
 
+var colors = {
+	text : ['cyan'],
+	defval : ['green', 'bold'],
+	param : ['green'],
+	header : ['bold', 'blue']
+};
+
 function s(str, colors) {
-	return _.reduce(colors, function(memo, v) { return memo[v]; }, s);
+	return _.reduce(colors, function(memo, v) { return memo[v]; }, str);
 }
 
 function colorize_prompt(msg, colors) {
-	
+	var matches = msg.match(/([^\[]*)(\[[^\]]+\])?/);
+	if (matches[2])
+		return s(matches[1], colors.text) + s(matches[2], colors.defval) + s(':', colors.text) + ' ';
+	else
+		return s(matches[1], colors.text) + s(':', colors.text) + ' ';
 }
 
 function do_prompt(field, msg) {
@@ -87,7 +96,7 @@ var get_filter_name = new fl.Chain(
 	function (env, after, table) {
 		env.table = table;
 		env.filter = table;
-		c.prompt('Filter name for table '+table+' ['+table+']: ', after);
+		c.prompt(colorize_prompt('Filter name for table `'+table+'` ['+table+']', colors), after);
 	},
 	function (env, after, value) {
 		if (value.length > 0)
@@ -106,14 +115,16 @@ var process_table = new fl.Chain(
 		_.each(rows, function(v) {
 			var type = get_field_type(v.Type);
 			if (type === undefined)
-				console.log('WARNING:'.bold.red+' Field '+v.Field+' of type '+v.Type+' does not match any types that db-filters currently understands. It will be omitted');
+				console.log('*** WARNING ***'.bold.red+' Field '.bold.blue+v.Field.green+' of type '.bold.blue+v.Type.green+' does not match any types that db-filters currently understands. It will be omitted'.blue.bold);
 			else
 				cols.push(v.Field+' : '+get_field_type(v.Type));
 		});
+
 		var output = 'module.exports = function(db) {\n';
 		output += '\tvar cols = {\n\t\t';
 		output += cols.join(',\n\t\t');
 		output += '\n\t};\n\n\tdb.add_filter("'+env.filter+'", new db("'+env.table+'", cols, {});\n}\n';
+
 		fs.writeFile(c.output+'/'+env.filter+'.js', output, after);
 	},
 	function (env, after, err) {
@@ -126,28 +137,38 @@ var process_table = new fl.Chain(
 	}
 );
 
+// We use the exception stack to skip processing a table that the user doesn't want to generate
+process_table.set_abort_handler(function(env, err) {
+	env.$catch();
+});
+
 var main = new fl.Chain(
-	do_prompt('host', 'MySQL host [localhost]: '),
+	function (env, after) {
+		console.log(s('Specify Parameters', colors.header));
+		after();
+	},
+	do_prompt('host', colorize_prompt('MySQL host [localhost]', colors)),
 	check_prompt('host', 'localhost'),
-	do_prompt('user', 'MySQL user [root]: '),
+	do_prompt('user', colorize_prompt('MySQL user [root]', colors)),
 	check_prompt('user', 'root'),
-	do_prompt_pass('pass', 'MySQL password: '),
+	do_prompt_pass('pass', colorize_prompt('MySQL password', colors)),
 	check_prompt('pass', undefined),
-	do_prompt('database', 'MySQL database: '),
+	do_prompt('database', colorize_prompt('MySQL database', colors)),
 	check_prompt('database', undefined),
-	do_prompt('output', 'Output directory [./filters]: '),
+	do_prompt('output', colorize_prompt('Output directory [./filters]', colors)),
 	check_prompt('output', './filters'),
 	function (env, after) {
-		console.log('Summary:');
-		console.log('\tMySQL host: '+c.host);
-		console.log('\tMySQL user: '+c.user);
-		console.log('\tMySQL pass: (hidden)');
-		console.log('\tDatabase to process: '+c.database);
-		console.log('\tOutput directory: '+c.output);
+		console.log(s('\nOption Summary', colors.header));
+		console.log(s('MySQL host ', colors.text) + s(c.host, colors.param));
+		console.log(s('MySQL user ', colors.text) + s(c.user, colors.param));
+		console.log(s('MySQL pass ', colors.text) + s('(hidden)', ['red']));
+		console.log(s('Database to process ', colors.text) + s(c.database, colors.param));
+		console.log(s('Output directory ', colors.text) + s(c.output, colors.param));
 		if (console.all)
-			console.log('\tProcessing all tables');
+			console.log(s('Processing all tables', colors.text));
 		else
-			console.log('\tPrompting for tables');
+			console.log(s('Prompting for tables', colors.text));
+		console.log(s('\nGenerating Definitions', colors.header));
 		after();
 	},
 	function (env, after) {
