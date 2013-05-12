@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /**
  * Tool to generate a set of table definitions from a database automatically
  * This will overwrite anything that stands in its way
@@ -14,12 +16,12 @@ var spy = require('spyglass');
 var gls = new spy();
 
 c.version('0.1.0')
-	.option('-H, --host <localhost>', 'MySQL host address')
-	.option('-u, --user <root>', 'MySQL user')
+	.option('-H, --host <host>', 'MySQL host address (default: localhost)')
+	.option('-u, --user <user>', 'MySQL user (default: root)')
 	.option('-p, --pass <pass>', 'MySQL password. If omitted, you will be prompted')
 	.option('-a, --all', 'Generate files for all tables found')
 	.option('-d, --database <name>', 'Database name to generate filters for')
-	.option('-o, --output <./filters>', 'Output path for filter definitions')
+	.option('-o, --output <path>', 'Output path for filter definitions (default: ./filters)')
 	.parse(process.argv);
 
 var colors = {
@@ -105,7 +107,28 @@ var get_filter_name = new fl.Chain(
 	}
 );
 
+var check_if_create = new fl.Chain(
+	function (env, after, table) {
+		env.table = table;
+		c.confirm(s('Generate filter for ', colors.text) + s(table, colors.param) + s('?', colors.text) + ' ', after);
+	},
+	function (env, after, ok) {
+		if (ok)
+			after(env.table);
+		else
+			env.$throw({});
+	}
+);
+
 var process_table = new fl.Chain(
+	function (env, after, table) {
+		if (!c.all) {
+			check_if_create.call(null, env, after, table);
+		}
+		else {
+			after(table);
+		}
+	},
 	get_filter_name,
 	function (env, after) {
 		env.conn.query('DESCRIBE '+c.database+'.'+env.table, after);
@@ -139,6 +162,7 @@ var process_table = new fl.Chain(
 
 // We use the exception stack to skip processing a table that the user doesn't want to generate
 process_table.set_abort_handler(function(env, err) {
+	console.log(s('Skipping table ', colors.text) + s(env.table, colors.param));
 	env.$catch();
 });
 
@@ -164,14 +188,14 @@ var main = new fl.Chain(
 		console.log(s('MySQL pass ', colors.text) + s('(hidden)', ['red']));
 		console.log(s('Database to process ', colors.text) + s(c.database, colors.param));
 		console.log(s('Output directory ', colors.text) + s(c.output, colors.param));
-		if (console.all)
+		if (c.all)
 			console.log(s('Processing all tables', colors.text));
 		else
 			console.log(s('Prompting for tables', colors.text));
-		console.log(s('\nGenerating Definitions', colors.header));
-		after();
+		c.prompt(s('\nPress enter to continue, or ctrl+c to cancel', colors.header)+' ', after);
 	},
-	function (env, after) {
+	function (env, after, input) {
+		console.log(s('\nGenerating Definitions', colors.header));
 		env.conn = mysql.createConnection({
 			host : c.host,
 			user : c.user,
