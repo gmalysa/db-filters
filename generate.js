@@ -116,7 +116,7 @@ var check_if_create = new fl.Chain(
 		if (ok)
 			after(env.table);
 		else
-			env.$throw({});
+			env.$throw({skip : true});
 	}
 );
 
@@ -131,9 +131,9 @@ var process_table = new fl.Chain(
 	},
 	get_filter_name,
 	function (env, after) {
-		env.conn.query('DESCRIBE '+c.database+'.'+env.table, after);
+		env.conn.query('DESCRIBE '+c.database+'.'+env.table, env.$check(after));
 	},
-	function (env, after, err, rows) {
+	function (env, after, rows) {
 		var cols = [];
 		_.each(rows, function(v) {
 			var type = get_field_type(v.Type);
@@ -148,22 +148,19 @@ var process_table = new fl.Chain(
 		output += cols.join(',\n\t\t');
 		output += '\n\t};\n\n\tdb.add_filter("'+env.filter+'", new db("'+env.table+'", cols, {});\n}\n';
 
-		fs.writeFile(c.output+'/'+env.filter+'.js', output, after);
-	},
-	function (env, after, err) {
-		if (err) {
-			env.$throw(err);
-		}
-		else {
-			after();
-		}
+		fs.writeFile(c.output+'/'+env.filter+'.js', output, env.$check(after));
 	}
 );
 
 // We use the exception stack to skip processing a table that the user doesn't want to generate
 process_table.set_abort_handler(function(env, err) {
-	console.log(s('Skipping table ', colors.text) + s(env.table, colors.param));
-	env.$catch();
+	if (err.skip) {
+		console.log(s('Skipping table ', colors.text) + s(env.table, colors.param));
+		env.$catch();
+	}
+	else {
+		env.$throw(err);
+	}
 });
 
 var main = new fl.Chain(
@@ -203,16 +200,11 @@ var main = new fl.Chain(
 		});
 
 		env.conn.connect();
-		env.conn.query('SHOW TABLES IN '+c.database, after);
+		env.conn.query('SHOW TABLES IN '+c.database, env.$check(after));
 	},
-	function (env, after, err, rows) {
-		if (err) {
-			env.$throw(err);
-		}
-		else {
-			rows = _.map(rows, function(v) { return _.values(v)[0]; });
-			after(rows, after);
-		}
+	function (env, after, rows) {
+		rows = _.map(rows, function(v) { return _.values(v)[0]; });
+		after(rows, after);
 	},
 	function (env, after, rows, loop) {
 		if (rows.length > 0) {
@@ -227,7 +219,7 @@ var main = new fl.Chain(
 
 var env = fl.mkenv({}, console.log);
 main.set_abort_handler(function(env, err) {
-	console.log(gls.inspect(err));
+	gls.inspect(err);
 	env.$catch();
 });
 main.call(null, env, process.exit);
