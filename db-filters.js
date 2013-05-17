@@ -360,13 +360,20 @@ _.extend(db.prototype, {
 	 */
 	escapeKey : function(key, options) {
 		var rtn = '';
+
 		if (options.useName) {
 			if (options.alias && options.alias.length > 0)
 				rtn = mysql.escapeId(options.alias) + '.';
 			else
 				rtn = mysql.escapeId(this.table) + '.';
 		}
-		return rtn + mysql.escapeId(key);
+
+		if (key instanceof op.Operator)
+			return rtn + key.getField(this, options);
+		else if (key == '*')
+			return rtn + key;
+		else
+			return rtn + mysql.escapeId(key);
 	},
 
 	/**
@@ -823,24 +830,25 @@ _.extend(SelectQuery.prototype, {
 	 * Returns the fields, or * if no fields were specified for one table. Also supports
 	 * renaming fields if they are passed as an array
 	 * @param fields Array of field information to parse
+	 * @param filter The filter that is used to escape/process the table field names
 	 * @param alias String Optional table alias to prepend field names with
 	 * @return String the fields
 	 */
-	getTableFields : function(fields, alias) {
-		if (alias && alias.length > 0)
-			alias = mysql.escapeId(alias)+'.';
-		else
-			alias = '';
+	getTableFields : function(fields, filter, alias) {
+		var opts = {
+			useName : (alias.length > 0),
+			alias : alias
+		};
 
 		if (fields.length > 0) {
-			return _.map(fields, function(v) {
+			return fields.map(function(v) {
 				if (_.isArray(v))
-					return alias + v[0] + ' AS ' + v[1];
-				return alias + v;
+					return filter.escapeKey(v[0], opts) + ' AS ' + v[1];
+				return filter.escapeKey(v, opts);
 			}).join(', ');
 		}
 
-		return alias + '*';
+		return filter.escapeKey('*', opts);
 	},
 
 	/**
@@ -851,12 +859,12 @@ _.extend(SelectQuery.prototype, {
 	 */
 	getFields : function() {
 		if (this._joins.length > 0) {
-			var fields = [this.getTableFields(this._fields, this.getTableAlias())];
+			var fields = [this.getTableFields(this._fields, this.db, this.getTableAlias())];
 			return fields.concat(_.map(this._joins, function(v, k) {
-				return this.getTableFields(v.fields, this.getTableAlias(k));
+				return this.getTableFields(v.fields, v.filter, this.getTableAlias(k));
 			}, this)).join(', ');
 		}
-		return this.getTableFields(this._fields, '');
+		return this.getTableFields(this._fields, this.db, '');
 	},
 
 	/**
