@@ -151,15 +151,6 @@ _.extend(db, {
 			db.fn_log(msg);
 	},
 
-	/**
-	 * Wraps a string to be converted into a LIKE match, rather than an equality test,
-	 * during query generation. These are cheaper than regexes.
-	 * @param str The source string
-	 */
-	Like : function Like(str) {
-		this.source = str;
-	}
-
 // Also, add the operator definitions directly to db in order to be easily accessible
 }, op.operators);
 
@@ -356,27 +347,6 @@ _.extend(db.prototype, {
 			}
 			terms.push(value.get(key, this, options));
 		}
-		/**
-		else {
-			// TODO: All of this is legacy code and therefore invalid
-			var escapedKey = this.escapeKey(key, options);
-
-			if (_.isArray(value)) {
-				var values = _.map(value, _.bind(this.handle_type, this, key));
-				if (values.length > 0)
-					terms.push(escapedKey + (negate ? ' NOT IN (' : ' IN (') + values.join(', ') + ')');
-			}
-			else if (value instanceof RegExp) {
-				terms.push(escapedKey + (negate ? ' NOT' : '') + ' REGEXP ' + mysql.escape(value.toString().replace(/\\/g, '\\\\')));
-			}
-			else if (value instanceof db.Like) {
-				terms.push(escapedKey + (negate ? ' NOT' : '') + ' LIKE ' + mysql.escape(value.source));
-			}
-			else {
-				terms.push(escapedKey + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
-			}
-		}
-		*/
 	},
 
 	/**

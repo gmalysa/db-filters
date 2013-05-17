@@ -6,6 +6,8 @@
  * Permission to use governed by the terms of the MIT license. See LICENSE for details
  */
 
+var mysql = require('mysql');
+
 /******************************************************************************
  * Base class of all operators, a mostly abstract class
  *****************************************************************************/
@@ -113,6 +115,47 @@ ArrayCondition.prototype.get = function(key, filter, options) {
 };
 
 /******************************************************************************
+ * Creates a regular expression comparison
+ *****************************************************************************/
+function RegexCondition(pattern) {
+	if (pattern instanceof RegExp) {
+		pattern = pattern.toString();
+		this.pattern = pattern.substr(1, pattern.length-2);
+	}
+	else {
+		this.pattern = pattern+'';
+	}
+}
+RegexCondition.prototype = new Operator();
+RegexCondition.prototype.constructor = RegexCondition;
+
+/**
+ * get() implementation, this simply treats value as a string always because other
+ * possibilities don't make sense
+ * @see Operator.get for parameter information
+ */
+RegexCondition.prototype.get = function(key, filter, options) {
+	return filter.escapeKey(key, options) + ' REGEXP ' + mysql.escape(this.pattern);
+};
+
+/******************************************************************************
+ *****************************************************************************/
+function LikeCondition(pattern) {
+	this.pattern = pattern;
+}
+LikeCondition.prototype = new Operator();
+LikeCondition.prototype.constructor = LikeCondition;
+
+/**
+ * get() implementation, this simply treats value as a string always, because other
+ * possibilities don't make sense
+ * @see Operator.get for parameter information
+ */
+LikeCondition.prototype.get = function(key, filter, options) {
+	return filter.escapeKey(key, options) + ' LIKE ' + mysql.escape(this.pattern);
+};
+
+/******************************************************************************
  * Because I am super lazy when it comes to writing out code, all of the actual operators
  * are generally generated programmatically, because that requires the least amount of typing.
  *****************************************************************************/
@@ -144,6 +187,10 @@ binary_free_templates.forEach(function(v) {
 // Array testing operators
 operators.$in = function(v) { return new ArrayCondition(v, undefined); };
 operators.$in2 = function(lval, arr) { return new ArrayCondition(arr, lval); };
+
+// String pattern matching operators
+operators.$regex = function(pattern) { return new RegexCondition(pattern); }
+operators.$like = function(pattern) { return new LikeCondition(pattern); }
 
 // Definition exports
 module.exports.Operator = Operator;
