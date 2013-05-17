@@ -17,6 +17,8 @@ var mysql = require('mysql');
 var crypto = require('crypto');
 var fs = require('fs');
 
+var op = require('./operators');
+
 /**
  * Constructor for the db filter takes options to define the table that it will be
  * used to filter
@@ -158,7 +160,8 @@ _.extend(db, {
 		this.source = str;
 	}
 
-});
+// Also, add the operator definitions directly to db in order to be easily accessible
+}, op.operators);
 
 // Member/instance data definition
 _.extend(db.prototype, {
@@ -343,6 +346,19 @@ _.extend(db.prototype, {
 			this.special[key].call(this, key, value, negate, terms, options);
 		}
 		else {
+			if (!(value instanceof op.Operator)) {
+				if (_.isArray(value))
+					value = db.$in(value);
+				else if (value instanceof RegExp)
+					value = db.$regex(value);
+				else
+					value = db.$eq(value);
+			}
+			terms.push(value.get(key, this, options));
+		}
+		/**
+		else {
+			// TODO: All of this is legacy code and therefore invalid
 			var escapedKey = this.escapeKey(key, options);
 
 			if (_.isArray(value)) {
@@ -360,6 +376,7 @@ _.extend(db.prototype, {
 				terms.push(escapedKey + (negate ? ' != ' : ' = ') + this.handle_type(key, value));
 			}
 		}
+		*/
 	},
 
 	/**
