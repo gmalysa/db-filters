@@ -58,7 +58,7 @@ BinaryConditionFixed.prototype.constructor = BinaryConditionFixed;
  * @see Operator.get for parameter information
  */
 BinaryConditionFixed.prototype.get = function(key, filter, options) {
-	return filter.escapeKey(key, options) + this.op + this.eval(this.value, key, filter, options);
+	return filter.escapeKey(key, options) + ' ' + this.op + ' ' + this.eval(this.value, key, filter, options);
 };
 
 /******************************************************************************
@@ -80,7 +80,36 @@ BinaryConditionFree.prototype.constructor = BinaryConditionFree;
  * @see Operator.get for parameter information
  */
 BinaryConditionFree.prototype.get = function(key, filter, options) {
-	return this.eval(this.lval, key, filter, options) + this.op + this.eval(this.rval, key, filter, options);
+	return this.eval(this.lval, key, filter, options) + ' ' + this.op + ' ' + this.eval(this.rval, key, filter, options);
+};
+
+/******************************************************************************
+ * Checks if a value is in an array, comes in two forms, one that fixes the key and one that
+ * allows a free lvalue
+ *****************************************************************************/
+function ArrayCondition(rval, lval) {
+	this.rval = rval;
+	this.lval = lval;
+}
+ArrayCondition.prototype = new Operator();
+ArrayCondition.prototype.constructor = ArrayCondition;
+
+/**
+ * get() implementation, which sets up the list and does a check with IN()
+ * @see Operator.get for parameter information
+ */
+ArrayCondition.prototype.get = function(key, filter, options) {
+	var lval, rval;
+	
+	if (this.lval === undefined)
+		lval = filter.escapeKey(key, options);
+	else
+		lval = this.eval(this.lval, key, filter, options);
+
+	rval = this.rval.map(function(v) {
+		return this.eval(v, key, filter, options);
+	}, this);
+	return lval + ' IN (' + rval.join(', ') + ')';
 };
 
 /******************************************************************************
@@ -111,6 +140,10 @@ binary_free_templates.forEach(function(v) {
 		return new BinaryConditionFree(v[1], lval, rval);
 	};
 });
+
+// Array testing operators
+operators.$in = function(v) { return new ArrayCondition(v, undefined); };
+operators.$in2 = function(lval, arr) { return new ArrayCondition(arr, lval); };
 
 // Definition exports
 module.exports.Operator = Operator;
