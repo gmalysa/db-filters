@@ -44,7 +44,7 @@ function colorize_prompt(msg, colors) {
 }
 
 function do_prompt(field, msg) {
-	return function (env, after) {
+	return function _do_prompt(env, after) {
 		if (c[field])
 			after(c[field]);
 		else
@@ -53,7 +53,7 @@ function do_prompt(field, msg) {
 }
 
 function do_prompt_pass(field, msg) {
-	return function (env, after) {
+	return function _do_prompt_pass(env, after) {
 		if (c[field])
 			after(c[field]);
 		else
@@ -62,7 +62,7 @@ function do_prompt_pass(field, msg) {
 }
 
 function check_prompt(field, defval) {
-	return function (env, after, value) {
+	return function _check_prompt(env, after, value) {
 		if (value.length > 0)
 			c[field] = value;
 		else if (defval !== undefined)
@@ -95,33 +95,35 @@ function get_field_type(type) {
 }
 
 var get_filter_name = new fl.Chain(
-	function (env, after, table) {
+	function prompt(env, after, table) {
 		env.table = table;
 		env.filter = table;
 		c.prompt(colorize_prompt('Filter name for table `'+table+'` ['+table+']', colors), after);
 	},
-	function (env, after, value) {
+	function check_result(env, after, value) {
 		if (value.length > 0)
 			env.filter = value;
 		after();
 	}
 );
+get_filter_name.name = 'get_filter_name';
 
 var check_if_create = new fl.Chain(
-	function (env, after, table) {
+	function prompt_check(env, after, table) {
 		env.table = table;
 		c.confirm(s('Generate filter for ', colors.text) + s(table, colors.param) + s('?', colors.text) + ' ', after);
 	},
-	function (env, after, ok) {
+	function do_check(env, after, ok) {
 		if (ok)
 			after(env.table);
 		else
 			env.$throw({skip : true});
 	}
 );
+check_if_create.name = 'check_if_create';
 
 var process_table = new fl.Chain(
-	function (env, after, table) {
+	function check_table(env, after, table) {
 		if (!c.all) {
 			check_if_create.call(null, env, after, table);
 		}
@@ -130,10 +132,10 @@ var process_table = new fl.Chain(
 		}
 	},
 	get_filter_name,
-	function (env, after) {
+	function describe_table(env, after) {
 		env.conn.query('DESCRIBE '+c.database+'.'+env.table, env.$check(after));
 	},
-	function (env, after, rows) {
+	function generate_filter(env, after, rows) {
 		var cols = [];
 		_.each(rows, function(v) {
 			var type = get_field_type(v.Type);
@@ -146,14 +148,15 @@ var process_table = new fl.Chain(
 		var output = 'module.exports = function(db) {\n';
 		output += '\tvar cols = {\n\t\t';
 		output += cols.join(',\n\t\t');
-		output += '\n\t};\n\n\tdb.add_filter("'+env.filter+'", new db("'+env.table+'", cols, {});\n}\n';
+		output += '\n\t};\n\n\tdb.add_filter("'+env.filter+'", new db("'+env.table+'", cols, {}));\n}\n';
 
 		fs.writeFile(c.output+'/'+env.filter+'.js', output, env.$check(after));
 	}
 );
+process_table.name = 'process_table';
 
 // We use the exception stack to skip processing a table that the user doesn't want to generate
-process_table.set_abort_handler(function(env, err) {
+process_table.set_exception_handler(function(env, err) {
 	if (err.skip) {
 		console.log(s('Skipping table ', colors.text) + s(env.table, colors.param));
 		env.$catch();
@@ -164,7 +167,7 @@ process_table.set_abort_handler(function(env, err) {
 });
 
 var main = new fl.Chain(
-	function (env, after) {
+	function setup_prompt(env, after) {
 		console.log(s('Specify Parameters', colors.header));
 		after();
 	},
@@ -178,7 +181,7 @@ var main = new fl.Chain(
 	check_prompt('database', undefined),
 	do_prompt('output', colorize_prompt('Output directory [./filters]', colors)),
 	check_prompt('output', './filters'),
-	function (env, after) {
+	function show_summary(env, after) {
 		console.log(s('\nOption Summary', colors.header));
 		console.log(s('MySQL host ', colors.text) + s(c.host, colors.param));
 		console.log(s('MySQL user ', colors.text) + s(c.user, colors.param));
@@ -191,7 +194,7 @@ var main = new fl.Chain(
 			console.log(s('Prompting for tables', colors.text));
 		c.prompt(s('\nPress enter to continue, or ctrl+c to cancel', colors.header)+' ', after);
 	},
-	function (env, after, input) {
+	function generate(env, after, input) {
 		console.log(s('\nGenerating Definitions', colors.header));
 		env.conn = mysql.createConnection({
 			host : c.host,
@@ -202,11 +205,11 @@ var main = new fl.Chain(
 		env.conn.connect();
 		env.conn.query('SHOW TABLES IN '+c.database, env.$check(after));
 	},
-	function (env, after, rows) {
+	function get_tables(env, after, rows) {
 		rows = _.map(rows, function(v) { return _.values(v)[0]; });
 		after(rows, after);
 	},
-	function (env, after, rows, loop) {
+	function table_loop(env, after, rows, loop) {
 		if (rows.length > 0) {
 			var row = rows.shift();
 			process_table.call(null, env, _.partial(loop, rows, loop), row);
@@ -216,9 +219,10 @@ var main = new fl.Chain(
 		}
 	}
 );
+main.name = 'main';
 
-var env = fl.mkenv({}, console.log);
-main.set_abort_handler(function(env, err) {
+var env = new fl.Environment();
+main.set_exception_handler(function(env, err) {
 	gls.inspect(err);
 	env.$catch();
 });
