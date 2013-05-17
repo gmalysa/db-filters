@@ -635,7 +635,6 @@ function SelectQuery(filter, where, negate) {
 // Inherit/copy all of the methods from Query, and then fill in the ones we need to change
 SelectQuery.prototype.constructor = SelectQuery;
 _.extend(SelectQuery.prototype, {
-
 	/**
 	 * Select uses a special where option that allows things to be specified per join index
 	 * @param idx The joined table number. The first joined table is index 0
@@ -662,12 +661,24 @@ _.extend(SelectQuery.prototype, {
 	 * @return Chainable this pointer
 	 */
 	group : function(groups) {
-		if (_.isArray(groups)) {
+		if (_.isArray(groups))
 			this._group = this._group.concat(groups);
-		}
-		else {
+		else
 			this._group = this._group.concat([groups]);
-		}
+		return this;
+	},
+
+	/**
+	 * Sets the alias for this table or a joined table
+	 * @param join Join index, optional, will apply the alias to this table
+	 * @param alias The string alias to use for this table in the query
+	 * @return Chainable this pointer.
+	 */
+	alias : function(join, alias) {
+		if (typeof join == 'number')
+			this._joins[join].alias = alias;
+		else
+			this._options.alias = arguments[0];
 		return this;
 	},
 
@@ -675,21 +686,14 @@ _.extend(SelectQuery.prototype, {
 	 * Accept a list of fields that should be used for the select query. Fields may be included
 	 * with an optoinal alias as well, which should be specified as an array in that case.
 	 * @param join Join index, optional, will apply these field selections to the given join
-	 * @param fields Array of fields to add, which should be strings or arrays of two strings
-	 * @param alias String, optional. Sets the table name alias if present
+	 * @param varargs, each is processed as a single field, whether literal or array type
 	 * @return Chainable this pointer
 	 */
-	fields : function(join, fields, alias) {
-		if (typeof join == 'number') {
-			this._joins[join].fields = this._joins[join].fields.concat(fields);
-			if (alias)
-				this._joins[join].alias = alias;
-		}
-		else {
-			this._fields = this._fields.concat(arguments[0]);
-			if (arguments[1])
-				this._options.alias = arguments[1];
-		}
+	fields : function(join, fields) {
+		if (typeof join == 'number')
+			this._joins[join].fields = this._joins[join].fields.concat(Array.prototype.slice.call(arguments, 1));
+		else
+			this._fields = this._fields.concat(Array.prototype.slice.call(arguments));
 		return this;
 	},
 
