@@ -1,6 +1,6 @@
 {
   "name"          : "db-filters",
-  "version"       : "0.1.2",
+  "version"       : "0.2.0",
   "description"   : "Systematic database query generation and abstraction",
   "keywords"      : ["database", "query", "generate", "filter", "mysql", "orm"],
   "author"        : "Greg Malysa <gmalysa@stanford.edu>",

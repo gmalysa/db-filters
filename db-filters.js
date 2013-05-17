@@ -181,12 +181,10 @@ _.extend(db.prototype, {
 	 * Creates and executes a SELECT query for the options given, passes control to callback
 	 * when complete
 	 * @param where Object used to specify what we're selecting by
-	 * @param negate Array used to specify any negative relationships in the where, optional
 	 * @return Query object that can have its properties modified before executing
 	 */
-	select : function(where, negate) {
-		negate = negate || [];
-		return new SelectQuery(this, where, negate);
+	select : function(where) {
+		return new SelectQuery(this, where);
 	},
 
 	/**
@@ -202,23 +200,19 @@ _.extend(db.prototype, {
 	 * Creates and executes an UPDATE query for the options given
 	 * @param update The new values to be written
 	 * @param where Object used to specify what to update
-	 * @param negate Any inverted relationships in where, optional
 	 * @return Query object that can have its properties modified before executing
 	 */
-	update : function(update, where, negate) {
-		negate = negate || [];
-		return new UpdateQuery(this, update, where, negate);
+	update : function(update, where) {
+		return new UpdateQuery(this, update, where);
 	},
 
 	/**
 	 * Creates and executes a DELETE query for the options given
 	 * @param where Object specifying what to delete
-	 * @param negate Any inverted relationships in where, optional
 	 * @return Query object that can have its properties modified before executing
 	 */
-	delete : function(where, negate) {
-		negate = negate || [];
-		return new DeleteQuery(this, where, negate);
+	delete : function(where) {
+		return new DeleteQuery(this, where);
 	},
 
 	/**
@@ -277,12 +271,11 @@ _.extend(db.prototype, {
 	 * This decodes a filter object and passes back a portion of the query string
 	 * suitable for use as a WHERE clause
 	 * @param where Object describing the filter to generate the where clause
-	 * @param negate Array of keys to represent with a negative relationship
 	 * @param options @see process for description
 	 * @return String suitable for direct inclusion as a WHERE clause
 	 */
-	where : function(where, negate, options) {
-		var result = this.decode_filter(where, negate, ' AND ', options);
+	where : function(where, options) {
+		var result = this.decode_filter(where, ' AND ', options);
 		if (result.length > 0)
 			return ' WHERE ' + result;
 		return '';
@@ -305,17 +298,15 @@ _.extend(db.prototype, {
 	 * This decodes a filtering object and produces a subclause that will be joined to
 	 * other clauses to form a finished query
 	 * @param params Object whose keys and values will be combined as pairs to form the subclause
-	 * @param negate Array of key names whose relationship should be inverted
 	 * @param sep The separator used to join the resulting terms together
 	 * @param options @see process for information
 	 * @return String The terms in the params object, decoded into SQL-compatible format
 	 */
-	decode_filter : function(params, negate, sep, options) {
+	decode_filter : function(params, sep, options) {
 		var terms = [];
 
 		_.each(params, function(v, k) {
-			var invert = negate[k] ? true : false;
-			this.process(k, v, invert, terms, options);
+			this.process(k, v, terms, options);
 		}, this);
 
 		return terms.join(sep);
@@ -328,13 +319,12 @@ _.extend(db.prototype, {
 	 * alias - string, if the table name is used, substitute this alias instead
 	 * @param key The name of the column this value is for
 	 * @param value The value to use for the column
-	 * @param negate Should the relationship be inverted (i.e. IN becomes NOT IN)
 	 * @param terms Array to store terms to. Arrays are passed by reference in javascript
 	 * @param options Map of option values. Each value is optional
 	 */
-	process : function(key, value, negate, terms, options) {
+	process : function(key, value, terms, options) {
 		if (this.special[key]) {
-			this.special[key].call(this, key, value, negate, terms, options);
+			this.special[key].call(this, key, value, terms, options);
 		}
 		else {
 			if (!(value instanceof op.Operator)) {
@@ -448,7 +438,6 @@ function Query(filter) {
 		alias : ''
 	};
 	this._where = {};					//!< Key used to define where clauses
-	this._negate = [];					//!< Array of fields to negate
 	this._limit = [];					//!< List of limit parameters
 }
 
@@ -480,7 +469,7 @@ _.extend(Query.prototype, {
 	 * @return String verbatim WHERE clause, will be empty if there are no restrictions
 	 */
 	getWhere : function() {
-		return this.db.where(this._where, this._negate, this._options);
+		return this.db.where(this._where, this._options);
 	},
 
 	/**
@@ -514,12 +503,10 @@ _.extend(Query.prototype, {
 	 * We also provide a default implementation for where, because again it is used by three of the four
 	 * queries that are provided, thereby reducing repetition.
 	 * @param where Key/value mapping, suitable for filter decoding, to be used for WHERE generation
-	 * @param negate Array of fields that should have their where parameters negated, optional.
 	 * @return Chainable this pointer
 	 */
-	where : function(where, negate) {
+	where : function(where) {
 		this._where = where || {};
-		this._negate = negate || [];
 		return this;
 	},
 	
@@ -594,13 +581,12 @@ _.extend(InsertQuery.prototype, {
  * @param filter The database filter to use for decoding values
  * @param values The new values to be written in place
  * @param where The update criteria
- * @param negate Any negated where relationships
  */
 UpdateQuery.prototype = new Query();
-function UpdateQuery(filter, values, where, negate) {
+function UpdateQuery(filter, values, where) {
 	Query.call(this, filter);
 	this.values = values;
-	this.where(where, negate);
+	this.where(where);
 }
 
 // Inherit/copy methods from Query and then fill in how to build an UPDATE query
@@ -619,12 +605,11 @@ _.extend(UpdateQuery.prototype, {
  * SelectQuery is used to construct a SELECT statement
  * @param filter The database filter used to help construct this query
  * @param where The where object for this filter
- * @param negate The array of key names
  */
 SelectQuery.prototype = new Query();
-function SelectQuery(filter, where, negate) {
+function SelectQuery(filter, where) {
 	Query.call(this, filter);
-	this.where(where, negate);
+	this.where(where);
 
 	this._fields = [];		//!< List of fields+names to populate select queries
 	this._group = [];		//!< List of group by parameters
@@ -639,19 +624,13 @@ _.extend(SelectQuery.prototype, {
 	 * Select uses a special where option that allows things to be specified per join index
 	 * @param idx The joined table number. The first joined table is index 0
 	 * @param where Key/value mapping, suitable for filter decoding, to be used for WHERE generation
-	 * @param negate Array of fields that should have their where parameters negated, optional.
 	 * @return Chainable this pointer
 	 */
-	where : function(idx, where, negate) {
-		if (typeof idx == 'number') {
+	where : function(idx, where) {
+		if (typeof idx == 'number')
 			this._joins[idx].where = where || {};
-			this._joins[idx].negate = negate || [];
-		}
-		else {
-			// If the index was omitted, use the original behavior on args 0 and 1
+		else
 			this._where = arguments[0] || {};
-			this._negate = arguments[1] || [];
-		}
 		return this;
 	},
 
@@ -731,7 +710,6 @@ _.extend(SelectQuery.prototype, {
 			'on' : [],
 			'fields' : [],
 			'where' : {},
-			'negate' : [],
 			'options' : {
 				'useName' :  true,
 				'alias' : alias
@@ -791,9 +769,9 @@ _.extend(SelectQuery.prototype, {
 	 * @return WHERE clause that can be concatenated immediately
 	 */
 	getWhere : function() {
-		var wheres = [this.db.decode_filter(this._where, this._negate, ' AND ', this._options)];
+		var wheres = [this.db.decode_filter(this._where, ' AND ', this._options)];
 		_.each(this._joins, function(v) {
-			var clause = v.filter.decode_filter(v.where, v.negate, ' AND ', v.options);
+			var clause = v.filter.decode_filter(v.where, ' AND ', v.options);
 			if (clause.length > 0)
 				wheres.push(clause);
 		}, this);
