@@ -288,7 +288,7 @@ _.extend(db.prototype, {
 	 * @return String suitable for direct inclusion as a SET clause
 	 */
 	set : function(values) {
-		var result = this.decode_filter(values, ', ', {force_eq : true});
+		var result = this.decode_filter(values, ', ', {});
 		if (result.length > 0)
 			return ' SET ' + result;
 		return '';
@@ -317,24 +317,19 @@ _.extend(db.prototype, {
 	 * @param options Map of option values. Each value is optional
 	 * @param value The value to use for the column
 	 * @param key The name of the column this value is for
-	 * @todo Add auto $eq wrapper for last case
 	 */
 	process : function(terms, options, value, key) {
 		if (this.special[key]) {
 			this.special[key].call(this, key, value, terms, options);
 		}
 		else {
-			if (!(value instanceof op.Operator)) {
+			if (!(value instanceof op.Conditional)) {
 				if (_.isArray(value))
 					value = db.$in(value);
 				else if (value instanceof RegExp)
 					value = db.$regex(value);
 				else
 					value = db.$eq(value);
-			}
-			else if (options.force_eq && value.name != '$eq') {
-				// Force a wrap in a $eq object, which simplifies some logic in UPDATE definitions
-				value = db.$eq(value);
 			}
 			terms.push(value.get(key, this, options));
 		}

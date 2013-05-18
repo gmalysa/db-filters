@@ -28,7 +28,7 @@ UnaryFunction.prototype.constructor = UnaryFunction;
  * @see Operator.get()
  */
 UnaryFunction.prototype.get = function(key, filter, options) {
-	if (this.value !== undefined)
+	if (this.value === undefined)
 		return this.fn + '(' + filter.escapeKey(key, options) + ')';
 	else
 		return this.fn + '(' + this.eval(this.value, key, filter, options) + ')';

@@ -9,16 +9,26 @@
 var mysql = require('mysql');
 var op = require('./operator_base.js');
 
-/******************************************************************************
+/*******************************************************************************
+ * Conditional base class, used for type identification, so that we can do some
+ * automatic wrapping and simplify expression nesting, provides no functionality
+ ******************************************************************************/
+function Conditional(name) {
+	op.Operator.call(this, name);
+}
+Conditional.prototype = new op.Operator();
+Conditional.prototype.constructor = new Conditional;
+
+/******************************************************************************8
  * Base class for all binary conditional operators that use the column name for an
  * lvalue
- *****************************************************************************/
+ ******************************************************************************/
 function BinaryConditionFixed(name, fn, value) {
-	op.Operator.call(this, name);
+	Conditional.call(this, name);
 	this.fn = fn;
 	this.value = value;
 }
-BinaryConditionFixed.prototype = new op.Operator();
+BinaryConditionFixed.prototype = new Conditional();
 BinaryConditionFixed.prototype.constructor = BinaryConditionFixed;
 
 /**
@@ -30,19 +40,19 @@ BinaryConditionFixed.prototype.get = function(key, filter, options) {
 	return filter.escapeKey(key, options) + ' ' + this.fn + ' ' + this.eval(this.value, key, filter, options);
 };
 
-/******************************************************************************
+/*******************************************************************************
  * Base class for all binary condition operators that accept two proper values, which
  * effectively disregards the column name. However, it is passed to any evaluated
  * expressions, so it can be used to build complex expressions out of simple column-
  * derived ones
- *****************************************************************************/
+ ******************************************************************************/
 function BinaryConditionFree(name, fn, lval, rval) {
-	op.Operator.call(this, name);
+	Conditional.call(this, name);
 	this.fn = fn;
 	this.lval = lval;
 	this.rval = rval;
 }
-BinaryConditionFree.prototype = new op.Operator();
+BinaryConditionFree.prototype = new Conditional();
 BinaryConditionFree.prototype.constructor = BinaryConditionFree;
 
 /**
@@ -53,17 +63,17 @@ BinaryConditionFree.prototype.get = function(key, filter, options) {
 	return this.eval(this.lval, key, filter, options) + ' ' + this.fn+ ' ' + this.eval(this.rval, key, filter, options);
 };
 
-/******************************************************************************
+/*******************************************************************************
  * Checks if a value is in an array, comes in two forms, one that fixes the key and one that
  * allows a free lvalue
- *****************************************************************************/
+ ******************************************************************************/
 function ArrayCondition(name, rval, inv, lval) {
-	op.Operator.call(this, name);
+	Conditional.call(this, name);
 	this.rval = rval;
 	this.lval = lval;
 	this.invert = inv;
 }
-ArrayCondition.prototype = new op.Operator();
+ArrayCondition.prototype = new Conditional();
 ArrayCondition.prototype.constructor = ArrayCondition;
 
 /**
@@ -84,11 +94,11 @@ ArrayCondition.prototype.get = function(key, filter, options) {
 	return lval + (this.invert ? ' NOT' : '') + ' IN (' + rval.join(', ') + ')';
 };
 
-/******************************************************************************
+/*******************************************************************************
  * Creates a regular expression comparison
- *****************************************************************************/
+ ******************************************************************************/
 function RegexCondition(name, pattern, inv) {
-	op.Operator.call(this, name);
+	Conditional.call(this, name);
 	if (pattern instanceof RegExp) {
 		pattern = pattern.toString();
 		this.pattern = pattern.substr(1, pattern.length-2);
@@ -98,7 +108,7 @@ function RegexCondition(name, pattern, inv) {
 	}
 	this.invert = inv;
 }
-RegexCondition.prototype = new op.Operator();
+RegexCondition.prototype = new Conditional();
 RegexCondition.prototype.constructor = RegexCondition;
 
 /**
@@ -110,16 +120,16 @@ RegexCondition.prototype.get = function(key, filter, options) {
 	return filter.escapeKey(key, options) + (this.invert ? ' NOT' : '') + ' REGEXP ' + mysql.escape(this.pattern);
 };
 
-/******************************************************************************
+/*******************************************************************************
  * Creates a LIKE conditional, which is cheaper for simple pattern matching
  * than an equivalent regex
- *****************************************************************************/
+ ******************************************************************************/
 function LikeCondition(name, pattern, inv) {
-	op.Operator.call(this, name);
+	Conditional.call(this, name);
 	this.pattern = pattern;
 	this.invert = inv;
 }
-LikeCondition.prototype = new op.Operator();
+LikeCondition.prototype = new Conditional();
 LikeCondition.prototype.constructor = LikeCondition;
 
 /**
@@ -131,10 +141,10 @@ LikeCondition.prototype.get = function(key, filter, options) {
 	return filter.escapeKey(key, options) + (this.invert ? ' NOT' : '') + ' LIKE ' + mysql.escape(this.pattern);
 };
 
-/******************************************************************************
+/*******************************************************************************
  * Because I am super lazy when it comes to writing out code, all of the actual operators
  * are generally generated programmatically, because that requires the least amount of typing.
- *****************************************************************************/
+ ******************************************************************************/
 // List of all operator functions that will be passed back to db-filters
 var operators = {};
 
@@ -172,5 +182,6 @@ operators.$like = function(pattern) { return new LikeCondition('$like', pattern,
 operators.$not_regex = function(pattern) { return new RegexCondition('$not_regex', pattern, true); }
 operators.$not_like = function(pattern) { return new LikeCondition('$not_like', pattern, true); }
 
-// Export just the list of operators, not the class information
+// Export just the list of operators and the base class definition
+module.exports.Conditional = Conditional;
 module.exports.operators = operators;
