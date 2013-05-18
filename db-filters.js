@@ -288,7 +288,7 @@ _.extend(db.prototype, {
 	 * @return String suitable for direct inclusion as a SET clause
 	 */
 	set : function(values) {
-		var result = this.decode_filter(values, [], ', ', {});
+		var result = this.decode_filter(values, ', ', {force_eq : true});
 		if (result.length > 0)
 			return ' SET ' + result;
 		return '';
@@ -304,11 +304,7 @@ _.extend(db.prototype, {
 	 */
 	decode_filter : function(params, sep, options) {
 		var terms = [];
-
-		_.each(params, function(v, k) {
-			this.process(k, v, terms, options);
-		}, this);
-
+		_.each(params, this.process.bind(this, terms, options));
 		return terms.join(sep);
 	},
 
@@ -317,12 +313,13 @@ _.extend(db.prototype, {
 	 * pair. The possible options are:
 	 * useName - boolean, should this table's name be emitted
 	 * alias - string, if the table name is used, substitute this alias instead
-	 * @param key The name of the column this value is for
-	 * @param value The value to use for the column
 	 * @param terms Array to store terms to. Arrays are passed by reference in javascript
 	 * @param options Map of option values. Each value is optional
+	 * @param value The value to use for the column
+	 * @param key The name of the column this value is for
+	 * @todo Add auto $eq wrapper for last case
 	 */
-	process : function(key, value, terms, options) {
+	process : function(terms, options, value, key) {
 		if (this.special[key]) {
 			this.special[key].call(this, key, value, terms, options);
 		}
@@ -334,6 +331,10 @@ _.extend(db.prototype, {
 					value = db.$regex(value);
 				else
 					value = db.$eq(value);
+			}
+			else if (options.force_eq && value.name != '$eq') {
+				// Force a wrap in a $eq object, which simplifies some logic in UPDATE definitions
+				value = db.$eq(value);
 			}
 			terms.push(value.get(key, this, options));
 		}

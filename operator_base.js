@@ -8,7 +8,9 @@
 /******************************************************************************
  * Base class of all operators, a mostly abstract class
  *****************************************************************************/
-function Operator() {}
+function Operator(name) {
+	this.name = name;
+}
 
 /**
  * Access wrapper that will either return a value, or if it is a nested value,
@@ -55,6 +57,7 @@ Operator.prototype.getField = function(filter, options) {
  * report about your usage case so that we can add functionality to cover it
  ******************************************************************************/
 function RawFunction(str) {
+	Operator.call(this, '$raw');
 	this.str = str;
 }
 RawFunction.prototype = new Operator();
@@ -83,6 +86,7 @@ RawFunction.prototype.getField = function(key, filter, options) {
  * value
  ******************************************************************************/
 function FieldFunction(field) {
+	Operator.call(this, '$field');
 	this.field = field;
 }
 FieldFunction.prototype = new Operator();

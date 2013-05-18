@@ -13,8 +13,9 @@ var op = require('./operator_base.js');
  * Base class for all binary conditional operators that use the column name for an
  * lvalue
  *****************************************************************************/
-function BinaryConditionFixed(op, value) {
-	this.op = op;
+function BinaryConditionFixed(name, fn, value) {
+	op.Operator.call(this, name);
+	this.fn = fn;
 	this.value = value;
 }
 BinaryConditionFixed.prototype = new op.Operator();
@@ -26,7 +27,7 @@ BinaryConditionFixed.prototype.constructor = BinaryConditionFixed;
  * @see Operator.get for parameter information
  */
 BinaryConditionFixed.prototype.get = function(key, filter, options) {
-	return filter.escapeKey(key, options) + ' ' + this.op + ' ' + this.eval(this.value, key, filter, options);
+	return filter.escapeKey(key, options) + ' ' + this.fn + ' ' + this.eval(this.value, key, filter, options);
 };
 
 /******************************************************************************
@@ -35,8 +36,9 @@ BinaryConditionFixed.prototype.get = function(key, filter, options) {
  * expressions, so it can be used to build complex expressions out of simple column-
  * derived ones
  *****************************************************************************/
-function BinaryConditionFree(op, lval, rval) {
-	this.op = op;
+function BinaryConditionFree(name, fn, lval, rval) {
+	op.Operator.call(this, name);
+	this.fn = fn;
 	this.lval = lval;
 	this.rval = rval;
 }
@@ -48,14 +50,15 @@ BinaryConditionFree.prototype.constructor = BinaryConditionFree;
  * @see Operator.get for parameter information
  */
 BinaryConditionFree.prototype.get = function(key, filter, options) {
-	return this.eval(this.lval, key, filter, options) + ' ' + this.op + ' ' + this.eval(this.rval, key, filter, options);
+	return this.eval(this.lval, key, filter, options) + ' ' + this.fn+ ' ' + this.eval(this.rval, key, filter, options);
 };
 
 /******************************************************************************
  * Checks if a value is in an array, comes in two forms, one that fixes the key and one that
  * allows a free lvalue
  *****************************************************************************/
-function ArrayCondition(rval, inv, lval) {
+function ArrayCondition(name, rval, inv, lval) {
+	op.Operator.call(this, name);
 	this.rval = rval;
 	this.lval = lval;
 	this.invert = inv;
@@ -84,7 +87,8 @@ ArrayCondition.prototype.get = function(key, filter, options) {
 /******************************************************************************
  * Creates a regular expression comparison
  *****************************************************************************/
-function RegexCondition(pattern, inv) {
+function RegexCondition(name, pattern, inv) {
+	op.Operator.call(this, name);
 	if (pattern instanceof RegExp) {
 		pattern = pattern.toString();
 		this.pattern = pattern.substr(1, pattern.length-2);
@@ -110,7 +114,8 @@ RegexCondition.prototype.get = function(key, filter, options) {
  * Creates a LIKE conditional, which is cheaper for simple pattern matching
  * than an equivalent regex
  *****************************************************************************/
-function LikeCondition(pattern, inv) {
+function LikeCondition(name, pattern, inv) {
+	op.Operator.call(this, name);
 	this.pattern = pattern;
 	this.invert = inv;
 }
@@ -140,7 +145,7 @@ var binary_fixed_templates = [
 	['$lt', '<'], ['$le', '<=']];
 binary_fixed_templates.forEach(function(v) {
 	operators[v[0]] = function(val) {
-		return new BinaryConditionFixed(v[1], val);
+		return new BinaryConditionFixed(v[0], v[1], val);
 	};
 });
 
@@ -151,21 +156,21 @@ var binary_free_templates = [
 	['$lt2', '<'], ['%le2', '<=']];
 binary_free_templates.forEach(function(v) {
 	operators[v[0]] = function(lval, rval) {
-		return new BinaryConditionFree(v[1], lval, rval);
+		return new BinaryConditionFree(v[0], v[1], lval, rval);
 	};
 });
 
 // Array testing operators
-operators.$in = function(v) { return new ArrayCondition(v, false, undefined); };
-operators.$in2 = function(lval, arr) { return new ArrayCondition(arr, false, lval); };
-operators.$not_in = function(v) { return new ArrayCondition(v, true, undefined); };
-operators.$not_in2 = function(lval, arr) { return new ArrayCondition(arr, true, lval); };
+operators.$in = function(v) { return new ArrayCondition('$in', v, false, undefined); };
+operators.$in2 = function(lval, arr) { return new ArrayCondition('$in2', arr, false, lval); };
+operators.$not_in = function(v) { return new ArrayCondition('$not_in', v, true, undefined); };
+operators.$not_in2 = function(lval, arr) { return new ArrayCondition('$not_in2', arr, true, lval); };
 
 // String pattern matching operators
-operators.$regex = function(pattern) { return new RegexCondition(pattern, false); }
-operators.$like = function(pattern) { return new LikeCondition(pattern, false); }
-operators.$not_regex = function(pattern) { return new RegexCondition(pattern, true); }
-operators.$not_like = function(pattern) { return new LikeCondition(pattern, true); }
+operators.$regex = function(pattern) { return new RegexCondition('$regex', pattern, false); }
+operators.$like = function(pattern) { return new LikeCondition('$like', pattern, false); }
+operators.$not_regex = function(pattern) { return new RegexCondition('$not_regex', pattern, true); }
+operators.$not_like = function(pattern) { return new LikeCondition('$not_like', pattern, true); }
 
 // Export just the list of operators, not the class information
 module.exports.operators = operators;

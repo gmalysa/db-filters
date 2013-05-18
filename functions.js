@@ -13,7 +13,8 @@ var op = require('./operator_base');
  * Base class for functions that take a single parameter, which is either a field
  * or a value, depending on usage
  ******************************************************************************/
-function UnaryFunction(fn, val) {
+function UnaryFunction(name, fn, val) {
+	op.Operator.call(this, name);
 	this.fn = fn;
 	this.value = val;
 }
@@ -46,7 +47,8 @@ UnaryFunction.prototype.getField = function(filter, options) {
  * the other of which is a literal value. Also supports field passthrough when
  * used in a where clause
  ******************************************************************************/
-function BinaryFunction(fn, field, val, order) {
+function BinaryFunction(name, fn, field, val, order) {
+	op.Operator.call(this, name);
 	this.fn = fn;
 	this.field = field;
 	this.value = val;
@@ -86,7 +88,8 @@ BinaryFunction.prototype.getField = function(filter, options) {
  * Base class for binary infix operators, like + and *, which have a functional
  * form that is different from binary named functions
  ******************************************************************************/
-function BinaryInfixOperator(fn, field, val) {
+function BinaryInfixOperator(name, fn, field, val) {
+	op.Operator.call(this, name);
 	this.fn = fn;
 	this.field = field;
 	this.value = val;
@@ -101,8 +104,6 @@ BinaryInfixOperator.prototype.constructor = BinaryInfixOperator;
 BinaryInfixOperator.prototype.get = function(key, filter, options) {
 	var value = this.eval(this.value, key, filter, options);
 	var field = filter.escapeKey((this.field === undefined) ? key : this.field, options);
-	console.log(typeof this.field);
-	console.log(field);
 	var args;
 
 	return field + ' ' + this.fn + ' ' + value;
@@ -122,7 +123,6 @@ BinaryInfixOperator.prototype.getField = function(filter, options) {
  ******************************************************************************/
 var operators = {};
 
-
 // Unary function information
 var unary_functions = [
 	['$count', 'COUNT'], ['$length', 'LENGTH'], ['$char_length', 'CHAR_LENGTH'],
@@ -137,7 +137,7 @@ var unary_functions = [
 	['$sin', 'SIN'], ['$sqrt', 'SQRT'], ['$tan', 'TAN']];
 unary_functions.forEach(function(v) {
 	operators[v[0]] = function(value) {
-		return new UnaryFunction(v[1], value);
+		return new UnaryFunction(v[0], v[1], value);
 	};
 });
 
@@ -149,9 +149,9 @@ var binary_functions = [
 binary_functions.forEach(function(v) {
 	operators[v[0]] = function(a1, a2) {
 		if (arguments.length == 1)
-			return new BinaryFunction(v[1], undefined, a1, v[2]);
+			return new BinaryFunction(v[0], v[1], undefined, a1, v[2]);
 		else
-			return new BinaryFunction(v[1], a1, a2, v[2]);
+			return new BinaryFunction(v[0], v[1], a1, a2, v[2]);
 	};
 });
 
@@ -163,11 +163,10 @@ var binary_infix = [
 	['$mod', '%']];
 binary_infix.forEach(function(v) {
 	operators[v[0]] = function(a1, a2) {
-		console.log('argument length: ' +arguments.length);
 		if (arguments.length == 1)
-			return new BinaryInfixOperator(v[1], undefined, a1);
+			return new BinaryInfixOperator(v[0], v[1], undefined, a1);
 		else
-			return new BinaryInfixOperator(v[1], a1, a2);
+			return new BinaryInfixOperator(v[0], v[1], a1, a2);
 	};
 });
 
