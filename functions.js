@@ -46,24 +46,75 @@ UnaryFunction.prototype.getField = function(filter, options) {
  * the other of which is a literal value. Also supports field passthrough when
  * used in a where clause
  ******************************************************************************/
-function BinaryFunction(fn, field, val) {
+function BinaryFunction(fn, field, val, order) {
 	this.fn = fn;
 	this.field = field;
 	this.value = val;
+	this.order = order;
 }
 BinaryFunction.prototype = new op.Operator();
 BinaryFunction.prototype.constructor = BinaryFunction;
 
-/*******************************************************************************
+/**
+ * Format a binary function, possibly evaluating key, value, or pre-specified
+ * field according to our best guess for how to parse this.
  * @see Operator.get()
- ******************************************************************************/
+ */
 BinaryFunction.prototype.get = function(key, filter, options) {
+	var value = this.eval(this.value, key, filter, options);
+	var field = filter.escapeKey((this.field === undefined) ? key : this.field, options);
+	var args;
+	
+	if (this.order == 0)
+		args = field + ', ' + value;
+	else
+		args = value + ', ' + field;
+	
+	return this.fn + '(' + args + ')';
+};
+
+/**
+ * Does the same thing, but with a fixed field parameter specified, so it actually
+ * just delegates back to get()
+ * @see Operator.getField()
+ */
+BinaryFunction.prototype.getField = function(filter, options) {
+	return this.get(this.field, filter, options);
 };
 
 /*******************************************************************************
- * @see Operator.getField()
+ * Base class for binary infix operators, like + and *, which have a functional
+ * form that is different from binary named functions
  ******************************************************************************/
-BinaryFunction.prototype.getField = function(filter, options) {
+function BinaryInfixOperator(fn, field, val) {
+	this.fn = fn;
+	this.field = field;
+	this.value = val;
+}
+BinaryInfixOperator.prototype = new op.Operator();
+BinaryInfixOperator.prototype.constructor = BinaryInfixOperator;
+
+/**
+ * Formats the operator expression just like for a function, except in infix notation
+ * @see Operator.get()
+ */
+BinaryInfixOperator.prototype.get = function(key, filter, options) {
+	var value = this.eval(this.value, key, filter, options);
+	var field = filter.escapeKey((this.field === undefined) ? key : this.field, options);
+	console.log(typeof this.field);
+	console.log(field);
+	var args;
+
+	return field + ' ' + this.fn + ' ' + value;
+};
+
+/**
+ * Does the same thing, but requires that a field was specified at construction
+ * time
+ * @see Operator.getField()
+ */
+BinaryInfixOperator.prototype.getField = function(filter, options) {
+	return this.get(this.field, filter, options);
 };
 
 /*******************************************************************************
@@ -71,16 +122,52 @@ BinaryFunction.prototype.getField = function(filter, options) {
  ******************************************************************************/
 var operators = {};
 
+
 // Unary function information
-// @todo Add math functions
 var unary_functions = [
 	['$count', 'COUNT'], ['$length', 'LENGTH'], ['$char_length', 'CHAR_LENGTH'],
 	['$trim', 'TRIM'], ['$ltrim', 'LTRIM'], ['$rtrim', 'RTRIM'],
 	['$soundex', 'SOUNDEX'], ['$reverse', 'REVERSE'], ['$lcase', 'LOWER'],
-	['$ucase', 'UPPER']];
-unary_functions.map(function(v) {
+	['$ucase', 'UPPER'], ['$not', 'NOT'], ['$bitcount', 'BIT_COUNT'],
+	['$abs', 'ABS'], ['$acos', 'ACOS'], ['$asin', 'ASIN'], ['$atan', 'ATAN'],
+	['$ceil', 'CEIL'], ['$cos', 'COS'], ['$cot', 'COT'], ['$crc32', 'CRC32'],
+	['$degrees', 'DEGREES'], ['$exp', 'EXP'], ['$floor', 'FLOOR'],
+	['$ln', 'LN'], ['$log10', 'LOG10'], ['$log2', 'LOG2'],
+	['$radians', 'RADIANS'], ['$round', 'ROUND'], ['$sign', 'SIGN'],
+	['$sin', 'SIN'], ['$sqrt', 'SQRT'], ['$tan', 'TAN']];
+unary_functions.forEach(function(v) {
 	operators[v[0]] = function(value) {
 		return new UnaryFunction(v[1], value);
+	};
+});
+
+// Binary function information
+var binary_functions = [
+	['$format', 'FORMAT', 0], ['$atan2', 'ATAN2', 0],
+	['$left', 'LEFT', 0], ['$right', 'RIGHT', 0], ['$repeat', 'REPEAT', 0],
+	['$pow', 'POW', 0], ['$truncate', 'TRUNCATE', 0], ['$round_to', 'ROUND', 0]];
+binary_functions.forEach(function(v) {
+	operators[v[0]] = function(a1, a2) {
+		if (arguments.length == 1)
+			return new BinaryFunction(v[1], undefined, a1, v[2]);
+		else
+			return new BinaryFunction(v[1], a1, a2, v[2]);
+	};
+});
+
+// Binary infix function information
+var binary_infix = [
+	['$band', '&'], ['$bor', '|'], ['$bxor', '^'],
+	['$lshift', '<<'], ['$rshift', '>>'],
+	['$add', '+'], ['$sub', '-'], ['$mult', '*'], ['$div', '/'],
+	['$mod', '%']];
+binary_infix.forEach(function(v) {
+	operators[v[0]] = function(a1, a2) {
+		console.log('argument length: ' +arguments.length);
+		if (arguments.length == 1)
+			return new BinaryInfixOperator(v[1], undefined, a1);
+		else
+			return new BinaryInfixOperator(v[1], a1, a2);
 	};
 });
 

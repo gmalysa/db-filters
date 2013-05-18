@@ -11,4 +11,4 @@ var c = require('./conditionals');
 var f = require('./functions');
 
 module.exports.Operator = op.Operator;
-module.exports.operators = _.extend({}, c.operators, f.operators);
+module.exports.operators = _.extend({}, op.operators, c.operators, f.operators);
