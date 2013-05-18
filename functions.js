@@ -125,16 +125,25 @@ var operators = {};
 
 // Unary function information
 var unary_functions = [
-	['$count', 'COUNT'], ['$length', 'LENGTH'], ['$char_length', 'CHAR_LENGTH'],
+	['$count', 'COUNT'], ['$not', 'NOT'],
+	// String functions
+	['$length', 'LENGTH'], ['$char_length', 'CHAR_LENGTH'],
 	['$trim', 'TRIM'], ['$ltrim', 'LTRIM'], ['$rtrim', 'RTRIM'],
 	['$soundex', 'SOUNDEX'], ['$reverse', 'REVERSE'], ['$lcase', 'LOWER'],
-	['$ucase', 'UPPER'], ['$not', 'NOT'], ['$bitcount', 'BIT_COUNT'],
+	['$ucase', 'UPPER'],
+	// Bitwise functions
+	['$bitcount', 'BIT_COUNT'],
+	// Math functions
 	['$abs', 'ABS'], ['$acos', 'ACOS'], ['$asin', 'ASIN'], ['$atan', 'ATAN'],
 	['$ceil', 'CEIL'], ['$cos', 'COS'], ['$cot', 'COT'], ['$crc32', 'CRC32'],
 	['$degrees', 'DEGREES'], ['$exp', 'EXP'], ['$floor', 'FLOOR'],
 	['$ln', 'LN'], ['$log10', 'LOG10'], ['$log2', 'LOG2'],
 	['$radians', 'RADIANS'], ['$round', 'ROUND'], ['$sign', 'SIGN'],
-	['$sin', 'SIN'], ['$sqrt', 'SQRT'], ['$tan', 'TAN']];
+	['$sin', 'SIN'], ['$sqrt', 'SQRT'], ['$tan', 'TAN'],
+	// "Miscellaneous" functions
+	['$md5', 'MD5'], ['$sha1', 'SHA1'], ['$compress', 'COMPRESS'],
+	['$uncompress', 'UNCOMPRESS'], ['$encrypt', 'ENCRYPT'],
+	];
 unary_functions.forEach(function(v) {
 	operators[v[0]] = function(value) {
 		return new UnaryFunction(v[0], v[1], value);
@@ -143,9 +152,16 @@ unary_functions.forEach(function(v) {
 
 // Binary function information
 var binary_functions = [
-	['$format', 'FORMAT', 0], ['$atan2', 'ATAN2', 0],
+	// String functions
 	['$left', 'LEFT', 0], ['$right', 'RIGHT', 0], ['$repeat', 'REPEAT', 0],
-	['$pow', 'POW', 0], ['$truncate', 'TRUNCATE', 0], ['$round_to', 'ROUND', 0]];
+	// Math functions
+	['$format', 'FORMAT', 0], ['$atan2', 'ATAN2', 0],
+	['$pow', 'POW', 0], ['$truncate', 'TRUNCATE', 0], ['$round_to', 'ROUND', 0],
+	// "Miscellaneous functions"
+	['$aes_encrypt', 'AES_ENCRYPT', 0], ['$aes_decrypt', 'AES_DECRYPT', 0],
+	['$des_encrypte', 'DES_ENCRYPT', 0], ['$des_decrypt', 'DES_DECRYPT', 0],
+	['$encode', 'ENCODE', 0], ['$decode', 'DECODE', 0]
+	];
 binary_functions.forEach(function(v) {
 	operators[v[0]] = function(a1, a2) {
 		if (arguments.length == 1)
