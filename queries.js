@@ -227,7 +227,7 @@ _.extend(SelectQuery.prototype, {
 	/**
 	 * Accept parameters to be used for the GROUP BY clause
 	 * @param idx Joined table index, optional, defaults to 0 (primary table) that contains the fields
-	 * @param varargs list of fields to group by
+	 * @param varargs list of fields to group by, or one array of a list of fields
 	 * @return Chainable this pointer
 	 */
 	group : function(idx) {
@@ -236,6 +236,9 @@ _.extend(SelectQuery.prototype, {
 			idx = 0;
 		else
 			varargs.shift();
+
+		if (_.isArray(varargs[0]))
+			varargs = varargs[0];
 
 		Array.prototype.push.apply(this._table[idx].group, varargs);
 		return this;
@@ -278,7 +281,7 @@ _.extend(SelectQuery.prototype, {
 	/**
 	 * Accepts a list of things for the order by clasue. To specify direction, use $db.asc and $db.desc.
 	 * @param idx Join table index, defaults to 0 (primary table)
-	 * @param varargs order by terms to add, one field per additional argument
+	 * @param varargs order by terms to add, one field per additional argument, or one array as the first argument
 	 * @return Chainable this pointer
 	 */
 	order : function(idx) {
@@ -287,6 +290,9 @@ _.extend(SelectQuery.prototype, {
 			idx = 0;
 		else
 			varargs.shift();
+
+		if (_.isArray(varargs[0]))
+			varargs = varargs[0];
 
 		Array.prototype.push.apply(this._tables[idx].order, varargs);
 		return this;
