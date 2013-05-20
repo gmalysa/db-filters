@@ -340,7 +340,7 @@ _.extend(SelectQuery.prototype, {
 		else
 			varargs.shift();
 
-		Array.prototype.push.apply(this._tables[join], varargs);
+		Array.prototype.push.apply(this._tables[join].on, varargs);
 		return this;
 	},
 
