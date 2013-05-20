@@ -22,6 +22,8 @@ function TableInfo(filter, options, joinType) {
 	this.on = [];
 	this.fields = [];
 	this.where = {};
+	this.order = [];
+	this.group = [];
 }
 
 /**
@@ -227,14 +229,18 @@ _.extend(SelectQuery.prototype, {
 
 	/**
 	 * Accept parameters to be used for the GROUP BY clause
-	 * @param groups Mixed, array of things to group or a single literal for grouping
+	 * @param idx Joined table index, optional, defaults to 0 (primary table) that contains the fields
+	 * @param varargs list of fields to group by
 	 * @return Chainable this pointer
 	 */
-	group : function(groups) {
-		if (_.isArray(groups))
-			this._group = this._group.concat(groups);
+	group : function(idx) {
+		var varargs = Array.prototype.slice.call(arguments);
+		if (typeof idx != 'number')
+			idx = 0;
 		else
-			this._group = this._group.concat([groups]);
+			varargs.shift();
+
+		Array.prototype.push.apply(this._table[idx].group, varargs);
 		return this;
 	},
 
@@ -273,14 +279,19 @@ _.extend(SelectQuery.prototype, {
 	},
 
 	/**
-	 * Accept a list of things for the order by clause, as an array. Optionally, if ascending/descending
-	 * order should be specified (i.e. not default), then the option should be an array with the field name
-	 * in the 0th index, and either ASC or DESC in the 1st index.
-	 * @param orders Array of order by subclauses to include
+	 * Accepts a list of things for the order by clasue. To specify direction, use $db.asc and $db.desc.
+	 * @param idx Join table index, defaults to 0 (primary table)
+	 * @param varargs order by terms to add, one field per additional argument
 	 * @return Chainable this pointer
 	 */
-	order : function(orders) {
-		this._order = this._order.concat(orders);
+	order : function(idx) {
+		var varargs = Array.prototype.slice.call(arguments);
+		if (typeof idx != 'number')
+			idx = 0;
+		else
+			varargs.shift();
+
+		Array.prototype.push.apply(this._tables[idx].order, varargs);
 		return this;
 	},
 
@@ -381,9 +392,18 @@ _.extend(SelectQuery.prototype, {
 	 * @return String the GROUP BY part of this select statement
 	 */
 	getGroupBy : function() {
-		if (this._group.length > 0) {
-			return ' GROUP BY ' + this._group.join(', ');
-		}
+		var groups = [];
+		this._tables.forEach(function(v) {
+			var internalGroup = v.group.map(function(g) {
+				return v.filter.escapeKey(g, v.options);
+			}).join(', ');
+
+			if (internalGroup.length > 0)
+				groups.push(internalGroup);
+		});
+
+		if (groups.length > 0)
+			return ' GROUP BY ' + groups;
 		return '';
 	},
 
@@ -392,13 +412,18 @@ _.extend(SelectQuery.prototype, {
 	 * @return String the ORDER BY part of this select statement
 	 */
 	getOrderBy : function() {
-		if (this._order.length > 0) {
-			return ' ORDER BY ' + _.map(this._order, function(v) {
-				if (_.isArray(v))
-					return v[0] + ' ' + v[1];
-				return v;
+		var order = [];
+		this._tables.forEach(function(v) {
+			var internalOrder = v.order.map(function(o) {
+				return v.filter.escapeKey(o, v.options);
 			}).join(', ');
-		}
+
+			if (internalOrder.length > 0)
+				order.push(internalOrder);
+		});
+
+		if (order.length > 0)
+			return ' ORDER BY ' + order;
 		return '';
 	},
 
