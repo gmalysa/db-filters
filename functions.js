@@ -10,6 +10,33 @@ var mysql = require('mysql');
 var op = require('./operator_base');
 
 /*******************************************************************************
+ * Base class for functions that take no arguments, such as RAND() or NOW().
+ ******************************************************************************/
+function NullaryFunction(name, fn) {
+	op.Operator.call(this, name);
+	this.fn = fn;
+}
+NullaryFunction.prototype = new op.Operator();
+NullaryFunction.prototype.constructor = NullaryFunction;
+
+/**
+ * get() simply returns the name of the function with parenthesis, ignoring all
+ * parameters
+ * @see Operator.get()
+ */
+NullaryFunction.prototype.get = function(key, filter, options) {
+	return this.fn + '()';
+};
+
+/**
+ * getField() does the same thing, so just forward the call
+ * @see Operator.getField()
+ */
+NullaryFunction.prototype.getField = function(filter, options) {
+	return this.get();
+}
+
+/*******************************************************************************
  * Base class for functions that take a single parameter, which is either a field
  * or a value, depending on usage
  ******************************************************************************/
@@ -122,6 +149,15 @@ BinaryInfixOperator.prototype.getField = function(filter, options) {
  * Create complete list of operators/functions/etc. defined here and export it
  ******************************************************************************/
 var operators = {};
+
+// Nullary function list
+var nullary_functions = [
+	['$rand', 'RAND'], ['$now', 'NOW']];
+nullary_functions.forEach(function(v) {
+	operators[v[0]] = function() {
+		return new NullaryFunction(v[0], v[1]);
+	};
+});
 
 // Unary function information
 var unary_functions = [

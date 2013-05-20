@@ -325,7 +325,7 @@ _.extend(db.prototype, {
 			this.special[key].call(this, key, value, terms, options);
 		}
 		else {
-			if (!(value instanceof op.Conditional)) {
+			if (!(value instanceof op.Conditional) && !(value instanceof op.RawFunction)) {
 				if (_.isArray(value))
 					value = db.$in(value);
 				else if (value instanceof RegExp)

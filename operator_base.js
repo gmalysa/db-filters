@@ -119,4 +119,5 @@ operators.$field = function(f) { return new FieldFunction(f); };
 
 // Definition exports
 module.exports.Operator = Operator;
+module.exports.RawFunction = RawFunction;
 module.exports.operators = operators;

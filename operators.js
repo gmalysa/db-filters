@@ -38,5 +38,6 @@ by.$desc = function(field) { return new OrderFunction('$desc', 'DESC', field); }
 
 // Interface exposed to db-filters.js
 module.exports.Operator = op.Operator;
+module.exports.RawFunction = op.RawFunction;
 module.exports.Conditional = c.Conditional;
 module.exports.operators = _.extend({}, op.operators, c.operators, f.operators, by);
