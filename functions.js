@@ -154,6 +154,7 @@ unary_functions.forEach(function(v) {
 var binary_functions = [
 	// String functions
 	['$left', 'LEFT', 0], ['$right', 'RIGHT', 0], ['$repeat', 'REPEAT', 0],
+	['$concat', 'CONCAT', 0],
 	// Math functions
 	['$format', 'FORMAT', 0], ['$atan2', 'ATAN2', 0],
 	['$pow', 'POW', 0], ['$truncate', 'TRUNCATE', 0], ['$round_to', 'ROUND', 0],

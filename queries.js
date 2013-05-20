@@ -204,9 +204,6 @@ SelectQuery.prototype = new Query();
 function SelectQuery(filter, where) {
 	Query.call(this, filter);
 	this.where(where);
-
-	this._group = [];		//!< List of group by parameters
-	this._order = [];		//!< List of order by parameters
 }
 
 // Inherit/copy all of the methods from Query, and then fill in the ones we need to change
