@@ -10,16 +10,26 @@ var _ = require('underscore');
 var mysql = require('mysql');
 
 /**
+ * Class that wraps a table definition, mostly just for simplicity
+ * @param filter The db instance that defines the filter used for this table
+ * @param options Hash of options for use with some filter methods
+ * @param joinType Optional information about using this table in a JOIN
+ */
+function TableInfo(filter, options, joinType) {
+	this.filter = filter;
+	this.options = options;
+	this.type = (joinType === undefined) ? '' : joinType;
+	this.on = [];
+	this.fields = [];
+	this.where = {};
+}
+
+/**
  * Query class used to make the interface make more logical sense
  * @param filter The db filter instance that defines the table this query acts on
  */
 function Query(filter) {
-	this.db = filter;					//!< Filter instance that is used to decode arguments
-	this._options = {					//!< Options array that will be passed to decode_filter()
-		useName : false,
-		alias : ''
-	};
-	this._where = {};					//!< Key used to define where clauses
+	this._tables = [new TableInfo(filter, {useName : false, alias : ''})];
 	this._limit = [];					//!< List of limit parameters
 }
 
@@ -51,7 +61,7 @@ _.extend(Query.prototype, {
 	 * @return String verbatim WHERE clause, will be empty if there are no restrictions
 	 */
 	getWhere : function() {
-		return this.db.where(this._where, this._options);
+		return this._tables[0].filter.where(this._tables[0].where, this._tables[0].options);
 	},
 
 	/**
@@ -88,7 +98,7 @@ _.extend(Query.prototype, {
 	 * @return Chainable this pointer
 	 */
 	where : function(where) {
-		this._where = where || {};
+		this._tables[0].where = where || {};
 		return this;
 	},
 	
@@ -100,7 +110,7 @@ _.extend(Query.prototype, {
 	 */
 	exec : function(success, failure) {
 		var query = this.buildQuery();
-		this.db.query(query, success, failure);
+		this._tables[0].filter.query(query, success, failure);
 	}
 });
 
@@ -122,7 +132,7 @@ _.extend(DeleteQuery.prototype, {
 	 * @return String SQL query
 	 */
 	buildQuery : function() {
-		return 'DELETE FROM ' + this.db.table + this.getWhere() + this.getLimit();
+		return 'DELETE FROM ' + this._tables[0].filter.table + this.getWhere() + this.getLimit();
 	}
 });
 
@@ -153,7 +163,7 @@ _.extend(InsertQuery.prototype, {
 	 * @return String SQL query
 	 */
 	buildQuery : function() {
-		return 'INSERT INTO ' + this.db.table + this.db.set(this.values);
+		return 'INSERT INTO ' + this._tables[0].filter.table + this._tables[0].filter.set(this.values);
 	}
 });
 
@@ -179,7 +189,7 @@ _.extend(UpdateQuery.prototype, {
 	 * @return String SQL query
 	 */
 	buildQuery : function() {
-		return 'UPDATE ' + this.db.table + this.db.set(this.values) + this.getWhere() + this.getLimit();
+		return 'UPDATE ' + this._tables[0].filter.table + this._tables[0].filter.set(this.values) + this.getWhere() + this.getLimit();
 	}
 });
 
@@ -193,10 +203,8 @@ function SelectQuery(filter, where) {
 	Query.call(this, filter);
 	this.where(where);
 
-	this._fields = [];		//!< List of fields+names to populate select queries
 	this._group = [];		//!< List of group by parameters
 	this._order = [];		//!< List of order by parameters
-	this._joins = [];		//!< List of table joins to apply
 }
 
 // Inherit/copy all of the methods from Query, and then fill in the ones we need to change
@@ -209,10 +217,11 @@ _.extend(SelectQuery.prototype, {
 	 * @return Chainable this pointer
 	 */
 	where : function(idx, where) {
-		if (typeof idx == 'number')
-			this._joins[idx].where = where || {};
-		else
-			this._where = arguments[0] || {};
+		if (typeof idx != 'number') {
+			where = arguments[0];
+			idx = 0;
+		}
+		this._tables[idx].where = where || {};
 		return this;
 	},
 
@@ -231,15 +240,16 @@ _.extend(SelectQuery.prototype, {
 
 	/**
 	 * Sets the alias for this table or a joined table
-	 * @param join Join index, optional, will apply the alias to this table
+	 * @param join Join index, optional, will apply the alias to this joined table
 	 * @param alias The string alias to use for this table in the query
 	 * @return Chainable this pointer.
 	 */
 	alias : function(join, alias) {
-		if (typeof join == 'number')
-			this._joins[join].alias = alias;
-		else
-			this._options.alias = arguments[0];
+		if (typeof join != 'number') {
+			alias = arguments[0];
+			join = 0;
+		}
+		this._tables[join].alias = alias || '';
 		return this;
 	},
 
@@ -250,11 +260,15 @@ _.extend(SelectQuery.prototype, {
 	 * @param varargs, each is processed as a single field, whether literal or array type
 	 * @return Chainable this pointer
 	 */
-	fields : function(join, fields) {
-		if (typeof join == 'number')
-			this._joins[join].fields = this._joins[join].fields.concat(Array.prototype.slice.call(arguments, 1));
+	fields : function(join) {
+		var args = Array.prototype.slice.call(arguments);
+		
+		if (typeof join != 'number')
+			join = 0;
 		else
-			this._fields = this._fields.concat(Array.prototype.slice.call(arguments));
+			args.shift();
+
+		Array.prototype.push.apply(this._tables[join].fields, args);
 		return this;
 	},
 
@@ -271,33 +285,41 @@ _.extend(SelectQuery.prototype, {
 	},
 
 	/**
-	 * Joins another table to this query. If the join type is not specified, then it defaults
-	 * to an INNER JOIN, because they do not require ON clauses to be specified (LEFT does).
-	 * The filter can be given as an array of [filter, alias], or as a filter instance directly
-	 * @param filter Mixed The filter to join against. This should be an instance of the db class or an array
-	 * @param type The join type, optional, defaults to 'LEFT,' but may be INNER or RIGHT as well
+	 * Add another table to this query as part of an inner join
+	 * @param filter The filter representing the table to add
+	 * @param alias The alias for the joined table in the query, optional
 	 * @return Chainable this pointer
 	 */
-	join : function(filter, type) {
-		var alias = '';
-		type = type || 'INNER';
-		if (_.isArray(filter)) {
-			alias = filter[1];
-			filter = filter[0];
-		}
+	inner_join : function(filter, alias) {
+		alias = alias || '';
+		this._tables.push(new TableInfo(filter, {useName : true, alias : alias}, 'INNER'));
+		this._tables[0].options.useName = true;
+		return this;
+	},
 
-		this._joins.push({
-			'filter' : filter,
-			'type' : type,
-			'on' : [],
-			'fields' : [],
-			'where' : {},
-			'options' : {
-				'useName' :  true,
-				'alias' : alias
-			}
-		});
-		this._options.useName = true;
+	/**
+	 * Adds another table to this query as part of a left join
+	 * @param filter The filter representing the table to add
+	 * @param alias The alias for the joined table in the query, optional
+	 * @return Chainable this pointer
+	 */
+	left_join : function(filter, alias) {
+		alias = alias || '';
+		this._tables.push(new TableInfo(filter, {useName : true, alias : alias}, 'LEFT'));
+		this._tables[0].options.useName = true;
+		return this;
+	},
+
+	/**
+	 * Adds another table to this query as part of a right join
+	 * @param filter The filter representing the table to add
+	 * @param alias The alias for the joined table in the query, optional
+	 * @return Chainable this pointer
+	 */
+	right_join : function(filter, alias) {
+		alias = alias || '';
+		this._tables.push(new TableInfo(filter, {useName : true, alias : alias}, 'RIGHT'));
+		this._tables[0].options.useName = true;
 		return this;
 	},
 
@@ -311,18 +333,14 @@ _.extend(SelectQuery.prototype, {
 	 * @param varargs, Each is an array of ON details
 	 * @return Chainable this pointer
 	 */
-	on : function() {
-		var varargs;
-		var join = this._joins[this._joins.length-1];
-		if (typeof arguments[0] == 'number') {
-			varargs = Array.prototype.slice.call(arguments, 1);
-			join = this._joins[arguments[0]];
-		}
-		else {
-			varargs = Array.prototype.slice.call(arguments);
-		}
+	on : function(join) {
+		var varargs = Array.prototype.slice.call(arguments);
+		if (typeof join != 'number')
+			join = this._tables.length - 1;
+		else
+			varargs.shift();
 
-		join.on = join.on.concat(varargs);
+		Array.prototype.push.apply(this._tables[join], varargs);
 		return this;
 	},
 
@@ -333,15 +351,12 @@ _.extend(SelectQuery.prototype, {
 	 * @return String table name or alias
 	 */
 	getTableAlias : function(idx) {
-		if (typeof idx == 'number') {
-			if (this._joins[idx].options.alias.length > 0)
-				return this._joins[idx].options.alias;
-			return this._joins[idx].filter.table;
-		}
+		if (typeof idx != 'number')
+			idx = 0;
 
-		if (this._options.alias.length > 0)
-			return this._options.alias;
-		return this.db.table;
+		if (this._tables[idx].options.alias.length > 0)
+			return this._tables[idx].options.alias;
+		return this._tables[idx].filter.table;
 	},
 
 	/**
@@ -351,12 +366,9 @@ _.extend(SelectQuery.prototype, {
 	 * @return WHERE clause that can be concatenated immediately
 	 */
 	getWhere : function() {
-		var wheres = [this.db.decode_filter(this._where, ' AND ', this._options)];
-		_.each(this._joins, function(v) {
-			var clause = v.filter.decode_filter(v.where, ' AND ', v.options);
-			if (clause.length > 0)
-				wheres.push(clause);
-		}, this);
+		var wheres = this._tables.map(function(v) {
+			return v.filter.decode_filter(v.where, ' AND ', v.options);
+		});
 
 		var where = wheres.join(' AND ');
 		if (where.length > 0)
@@ -393,26 +405,19 @@ _.extend(SelectQuery.prototype, {
 	/**
 	 * Returns the fields, or * if no fields were specified for one table. Also supports
 	 * renaming fields if they are passed as an array
-	 * @param fields Array of field information to parse
-	 * @param filter The filter that is used to escape/process the table field names
-	 * @param alias String Optional table alias to prepend field names with
+	 * @param table A TableInfo instance that describes the table to get fields for
 	 * @return String the fields
 	 */
-	getTableFields : function(fields, filter, alias) {
-		var opts = {
-			useName : (alias.length > 0),
-			alias : alias
-		};
-
-		if (fields.length > 0) {
-			return fields.map(function(v) {
+	getTableFields : function(table) {
+		if (table.fields.length > 0) {
+			return table.fields.map(function(v) {
 				if (_.isArray(v))
-					return filter.escapeKey(v[0], opts) + ' AS ' + v[1];
-				return filter.escapeKey(v, opts);
+					return table.filter.escapeKey(v[0], table.options) + ' AS ' + v[1];
+				return table.filter.escapeKey(v, table.options);
 			}).join(', ');
 		}
 
-		return filter.escapeKey('*', opts);
+		return table.filter.escapeKey('*', table.options);
 	},
 
 	/**
@@ -422,13 +427,7 @@ _.extend(SelectQuery.prototype, {
 	 * @return Complete fields listing for this query
 	 */
 	getFields : function() {
-		if (this._joins.length > 0) {
-			var fields = [this.getTableFields(this._fields, this.db, this.getTableAlias())];
-			return fields.concat(_.map(this._joins, function(v, k) {
-				return this.getTableFields(v.fields, v.filter, this.getTableAlias(k));
-			}, this)).join(', ');
-		}
-		return this.getTableFields(this._fields, this.db, '');
+		return this._tables.map(this.getTableFields, this).join(', ');
 	},
 
 	/**
@@ -461,22 +460,18 @@ _.extend(SelectQuery.prototype, {
 	 * @return String table name portion of query
 	 */
 	getTableNameClause : function() {
-		// Create primary table reference
-		var tables = [this.db.table + (this._options.alias.length > 0 ? ' AS ' + this._options.alias : '')];
-		
-		if (this._joins.length > 0) {
-			// Because we're joining, construct a list of table names/aliases for ON generation
-			var tableNames = [this.getTableAlias()].concat(_.map(this._joins, function(v, k) {
-				return this.getTableAlias(k);
-			}, this));
+		// Need a list of all table names before going into join clause generation
+		var tableNames = this._tables.map(function(v, k) {
+			return this.getTableAlias(k);
+		}, this);
 
-			// Add entries for joined tables
-			tables = tables.concat(_.map(this._joins, function(v) {
-				return v.type + ' JOIN ' + v.filter.table + (v.options.alias.length > 0 ? ' AS '+v.options.alias : '') + this.getOnClause(v.on, tableNames);
-			}, this));
-		}
-
-		return tables.join(' ');
+		// Combine table names, join parameters, and on clauses
+		return this._tables.map(function(v) {
+			var name = v.filter.table + (v.options.alias.length > 0 ? ' AS ' + v.options.alias : '');
+			if (v.type.length > 0)
+				name = v.type + ' JOIN ' + name + this.getOnClause(v.on, tableNames);
+			return name;
+		}, this).join(' ');
 	},
 	
 	/**
