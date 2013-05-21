@@ -152,7 +152,10 @@ var operators = {};
 
 // Nullary function list
 var nullary_functions = [
-	['$rand', 'RAND'], ['$now', 'NOW']];
+	['$rand', 'RAND'], ['$now', 'NOW'],
+	['$curdate', 'CURDATE'], ['$curtime', 'CURTIME'],
+	['$utc_date', 'UTC_DATE'], ['$utc_time', '$UTC_TIME'],
+	['$utc_timestamp', 'UTC_TIMESTAMP']];
 nullary_functions.forEach(function(v) {
 	operators[v[0]] = function() {
 		return new NullaryFunction(v[0], v[1]);
@@ -179,6 +182,7 @@ var unary_functions = [
 	// "Miscellaneous" functions
 	['$md5', 'MD5'], ['$sha1', 'SHA1'], ['$compress', 'COMPRESS'],
 	['$uncompress', 'UNCOMPRESS'], ['$encrypt', 'ENCRYPT'],
+	['$inet_aton', 'INET_ATON'], ['$inet_ntoa', 'INET_NOTA'],
 	];
 unary_functions.forEach(function(v) {
 	operators[v[0]] = function(value) {
