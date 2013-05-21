@@ -194,7 +194,7 @@ db..filters.users.select(...)
 ```javascript
 db.filters.posts.select(...)
     .alias('p')
-    .fields('id', 'threadId', 'userId'])
+    .fields('id', 'threadId', 'userId')
     .left_join(db.filters.users, 'u')
     .fields(1, 'name', 'registered')
     .on(['userId', 'id'])
@@ -206,7 +206,17 @@ db.filters.posts.select(...)
 A complete list of the $-functions available for specifying operations on data. These generally correspond to mysql functions one-to-one. If a function takes multiple arguments, then when it is used in the where clause, the corresponding field name is used as the first argument, and a concrete value is used as the second. If you want/need to change this, use $raw to specify a concrete value and $field to properly wrap a field reference. Note that $field will replace the field in the body of the expression, so something like {id : db.$field('idx')} will produce `id` = `idx`, which is useful for comparing fields to computed functions of different fields.
 
 ```
-$raw, $field, $eq, $neq, $gt, $ge, $lt, $le, $eq2, $neq2, $gt2, $ge2, $lt2, $in, $in2, $not_in, $not_in2, $regex, $like, $not_regex, $not_like, $rand, $now, $curdate, $curtime, $utc_date, $utc_time, $utc_timestamp, $count, $not, $length, $char_length, $trim, $ltrim, $rtrim, $soundex, $reverse, $lcase, $ucase, $bitcount, $abs, $acos, $asin, $atan, $ceil, $cos, $cot, $crc32, $degrees, $exp, $floor, $ln, $log10, $log2, $radians, $round, $sign, $sin, $sqrt, $tan, $md5, $sha1, $compress, $uncompress, $encrypt, $inet_aton, $inet_ntoa, $left, $right, $repeat, $concat, $format, $atan2, $pow, $truncate, $round_to, $aes_encrypt, $aes_decrypt, $des_encrypte, $des_decrypt, $encode, $decode, $band, $bor, $bxor, $lshift, $rshift, $add, $sub, $mult, $div, $mod, $asc, $desc
+$raw, $field, $eq, $neq, $gt, $ge, $lt, $le, $eq2, $neq2, $gt2, $ge2, $lt2, $in,
+$in2, $not_in, $not_in2, $regex, $like, $not_regex, $not_like, $rand, $now,
+$curdate, $curtime, $utc_date, $utc_time, $utc_timestamp, $count, $not,
+$length, $char_length, $trim, $ltrim, $rtrim, $soundex, $reverse, $lcase, $ucase,
+$bitcount, $abs, $acos, $asin, $atan, $ceil, $cos, $cot, $crc32, $degrees,
+$exp, $floor, $ln, $log10, $log2, $radians, $round, $sign, $sin, $sqrt, $tan,
+$md5, $sha1, $compress, $uncompress, $encrypt, $inet_aton, $inet_ntoa,
+$left, $right, $repeat, $concat, $format, $atan2, $pow, $truncate, $round_to,
+$aes_encrypt, $aes_decrypt, $des_encrypte, $des_decrypt, $encode,
+$decode, $band, $bor, $bxor, $lshift, $rshift, $add, $sub, $mult, $div, $mod,
+$asc, $desc
 ```
 
 More functions may be added as necessary. If there is something you need that isn't listed, please open an issue or add it yourself and submit a pull request. If a new functional form is required (i.e. three arguments, or some of the awkward date syntax that comes up, etc.) I'd prefer an issue be opened so that we can plan the implementation better before just hacking in support for one function at a time.
@@ -215,7 +225,9 @@ The difference between $eq and $eq2 is that $eq locks the left side of the expre
 
 ## TODOs/Limitations
 
-There is no good way to specify cross-table relationships in WHERE clauses on multitable JOINs. This is something I'm investigating (suggestions are welcome) to implement in a manner that is consistent with the idea of presenting a simple, flexible, and powerful interface for assigning these types of constraints, but as of yet I don't have a way to reduce this to filtering operations. This means that the only cross-table relationships that are supported are strict equality in the ON clause.
+* There is no good way to specify cross-table relationships in WHERE clauses on multitable JOINs. This is something I'm investigating (suggestions are welcome) to implement in a manner that is consistent with the idea of presenting a simple, flexible, and powerful interface for assigning these types of constraints, but as of yet I don't have a way to reduce this to filtering operations. This means that the only cross-table relationships that are supported are strict equality in the ON clause.
 
-Combine fixed and free binary conditions into a single class, eliminate $*2 variants of conditional operators. We can do this by type guessing and including an if statement, and it will simplify the API.
+* Combine fixed and free binary conditions into a single class, eliminate $*2 variants of conditional operators. We can do this by type guessing and including an if statement, and it will simplify the API.
+
+* Allowing for an array of value sets to be passed to insert(), inserting multiple rows. This will rely on using a flow control library to execute a series of queries in sequence before calling either success or failure, so it will be implemented once flux-link has added looping constructs, because I am not interested in duplicating the functionality both here and there.
 
