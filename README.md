@@ -76,9 +76,11 @@ Each of the filter methods (select, insert, update, and delete) returns a query 
 
 This creates a query that retrieves data from the database, naturally. The `where` parameter should be an object, where each key is either the name of a defined field for this table, or the name of a "special" field. The corresponding value for each key will be escaped and converted to the proper format for the column type, or it will be passed to the "special" handler, which is used to apply compound and/or complex rules on a single key. Values may be the result of operator functions as well as literals, such as {status : db.$neq(1)}, which will select rows where status != 1.
 
-The special handler can emit zero or more entries, which is useful for aliasing multiple fields. For instance, in a many-to-many table that relates parents to children and identifies both by <id, type> pairs, it is convenient to define a "parent" special handler that maps the object to both a "parentId" and a "parentType" field, and an analogous handler for "child." Effectively, the special handlers provide a means to implement more sophisticated ORM.
+The special handler can emit zero or more entries, which is useful for aliasing multiple fields. For instance, in a many-to-many table that relates parents to children and identifies both by <id, type> pairs, it is convenient to define a "parent" special handler that maps the object to both a "parentId" and a "parentType" field, and an analogous handler for "child," which simplify the where clauses that you must supply from {parentId : parent.id, parentType : parent.type} to {parent : parent}, which is shorter to type and creates consistency in your application. Effectively, the special handlers provide a means to implement more sophisticated ORM.
 
-Entries in the where parameter are processed according to type. If they are not an instance of a Conditional(which is produced by the db.$ functions defined in conditionals.js), then they are wrapped in one of db.$eq, db.$in, or db.$regex, depending on the type of javascript object supplied. If an operator is supplied, however, then it is evaluated, and its result is used in the WHERE clause. The operators perform input escaping and convert values to match the column type where appropriate.
+Entries in the where parameter are processed according to type. If they are not an instance of a Conditional (which is produced by the db.$ functions defined in conditionals.js), then they are wrapped in one of db.$eq, db.$in, or db.$regex, depending on the type of javascript object supplied. If an operator is supplied, however, then it is evaluated, and its result is used in the WHERE clause. The operators perform input escaping and convert values to match the column type where appropriate.
+
+A wide variety of db.$ functions are available to do additional processing. Generally, they are converted into their equivalent MySQL with appropriate field names and given parameters inserted, and are then executed by the MySQL server during the query, the same way as they would be if they were written by hand. However, this interface abstracts that aspect of SQL, allowing it to be transformed for use with another RDMS. I've made attempts to include most of the functions available to MySQL, but there are always gaps. There is a complete list of currently added db.$ functions farther down in the README file.
 
 Once a select query has been created, it can be modified through many additional functions. These include ```limit()```, ```order()```, ```group()```, ```alias()```, and ```fields()```. Additionally, table joins are supported using the ```inner_join()```, ```left_join()```, and ```right_join()``` methods to specify filters to join to, ```on()``` to specify join conditions, and ```where()``` to specify filter parameters for joined tables. All of these methods may be chained to simplify user code. **Note:** Many functions take an optional first parameter to indicate which table the function applies to. If you do not wish to specify a table, DO NOT pass null or undefined. Simply skip the index parameter entirely.
 
@@ -192,15 +194,40 @@ db..filters.users.select(...)
 ```javascript
 db.filters.posts.select(...)
     .alias('p')
-    .fields('id', 'threadId', 'userId'])
+    .fields('id', 'threadId', 'userId')
     .left_join(db.filters.users, 'u')
     .fields(1, 'name', 'registered')
     .on(['userId', 'id'])
     .exec();
 ```
 
+## Complete list of helpers
+
+A complete list of the $-functions available for specifying operations on data. These generally correspond to mysql functions one-to-one. If a function takes multiple arguments, then when it is used in the where clause, the corresponding field name is used as the first argument, and a concrete value is used as the second. If you want/need to change this, use $raw to specify a concrete value and $field to properly wrap a field reference. Note that $field will replace the field in the body of the expression, so something like {id : db.$field('idx')} will produce `id` = `idx`, which is useful for comparing fields to computed functions of different fields.
+
+```
+$raw, $field, $eq, $neq, $gt, $ge, $lt, $le, $eq2, $neq2, $gt2, $ge2, $lt2, $in,
+$in2, $not_in, $not_in2, $regex, $like, $not_regex, $not_like, $rand, $now,
+$curdate, $curtime, $utc_date, $utc_time, $utc_timestamp, $count, $not,
+$length, $char_length, $trim, $ltrim, $rtrim, $soundex, $reverse, $lcase, $ucase,
+$bitcount, $abs, $acos, $asin, $atan, $ceil, $cos, $cot, $crc32, $degrees,
+$exp, $floor, $ln, $log10, $log2, $radians, $round, $sign, $sin, $sqrt, $tan,
+$md5, $sha1, $compress, $uncompress, $encrypt, $inet_aton, $inet_ntoa,
+$left, $right, $repeat, $concat, $format, $atan2, $pow, $truncate, $round_to,
+$aes_encrypt, $aes_decrypt, $des_encrypte, $des_decrypt, $encode,
+$decode, $band, $bor, $bxor, $lshift, $rshift, $add, $sub, $mult, $div, $mod,
+$asc, $desc
+```
+
+More functions may be added as necessary. If there is something you need that isn't listed, please open an issue or add it yourself and submit a pull request. If a new functional form is required (i.e. three arguments, or some of the awkward date syntax that comes up, etc.) I'd prefer an issue be opened so that we can plan the implementation better before just hacking in support for one function at a time.
+
+The difference between $eq and $eq2 is that $eq locks the left side of the expression to the field name that it is used with, accepting only one argument. If you need to apply a function to the left side, use $eq2, which accepts two parameters and ignores the given column name. This can be useful for creating conditions in conjunction with GROUP BY statements, such as selecting only groups whose sum is greater than some threshold, and is frequently necessary when dealing with date objects.
+
 ## TODOs/Limitations
 
-There is no good way to specify cross-table relationships in WHERE clauses on multitable JOINs. This is something I'm investigating (suggestions are welcome) to implement in a manner that is consistent with the idea of presenting a simple, flexible, and powerful interface for assigning these types of constraints, but as of yet I don't have a way to reduce this to filtering operations. This means that the only cross-table relationships that are supported are strict equality in the ON clause.
+* There is no good way to specify cross-table relationships in WHERE clauses on multitable JOINs. This is something I'm investigating (suggestions are welcome) to implement in a manner that is consistent with the idea of presenting a simple, flexible, and powerful interface for assigning these types of constraints, but as of yet I don't have a way to reduce this to filtering operations. This means that the only cross-table relationships that are supported are strict equality in the ON clause.
 
+* Combine fixed and free binary conditions into a single class, eliminate $*2 variants of conditional operators. We can do this by type guessing and including an if statement, and it will simplify the API.
+
+* Allowing for an array of value sets to be passed to insert(), inserting multiple rows. This will rely on using a flow control library to execute a series of queries in sequence before calling either success or failure, so it will be implemented once flux-link has added looping constructs, because I am not interested in duplicating the functionality both here and there.
 
