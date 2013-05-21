@@ -120,6 +120,7 @@ function BinaryInfixOperator(name, fn, field, val) {
 	this.fn = fn;
 	this.field = field;
 	this.value = val;
+	this.require_group = true;
 }
 BinaryInfixOperator.prototype = new op.Operator();
 BinaryInfixOperator.prototype.constructor = BinaryInfixOperator;

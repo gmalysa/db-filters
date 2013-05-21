@@ -10,6 +10,7 @@
  *****************************************************************************/
 function Operator(name) {
 	this.name = name;
+	this.require_group = false;
 }
 
 /**
@@ -23,7 +24,10 @@ function Operator(name) {
  */
 Operator.prototype.eval = function(value, key, filter, options) {
 	if (value instanceof Operator) {
-		return '('+value.get(key, filter, options)+')';
+		var result = value.get(key, filter, options);
+		if (this.require_group)
+			return '(' + result + ')';
+		return result;
 	}
 	else {
 		return filter.handle_type(key, value);
