@@ -418,7 +418,6 @@ _.extend(SelectQuery.prototype, {
 		var order = [];
 		this._tables.forEach(function(v) {
 			var internalOrder = v.order.map(function(o) {
-				console.log('Pushing '+o);
 				return v.filter.escapeKey(o, v.options);
 			}).join(', ');
 
