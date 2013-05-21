@@ -357,7 +357,7 @@ _.extend(db.prototype, {
 		}
 
 		if (key instanceof op.Operator)
-			return rtn + key.getField(this, options);
+			return key.getField(this, options);
 		else if (key == '*')
 			return rtn + key;
 		else
