@@ -183,10 +183,11 @@ _.extend(db.prototype, {
 	 * Creates and executes a SELECT query for the options given, passes control to callback
 	 * when complete
 	 * @param where Object used to specify what we're selecting by
+	 * @param alias Optional table alias, only used if this later becomes a joined query
 	 * @return Query object that can have its properties modified before executing
 	 */
-	select : function(where) {
-		return new q.SelectQuery(this, where);
+	select : function(where, alias) {
+		return new q.SelectQuery(this, where, alias);
 	},
 
 	/**

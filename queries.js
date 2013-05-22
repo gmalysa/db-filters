@@ -79,17 +79,13 @@ _.extend(Query.prototype, {
 
 	/**
 	 * We provide a default implementation for limit because it is used by three of the four queries that
-	 * are provided, so this reduces repetition
-	 * @param limits Mixed representing the limits to use. Can be an array or a literal (int or string)
+	 * are provided, so this reduces repetition. Limits are specified in one of two ways:
+	 * limit(count) or limit(offset, count).
+	 * @param varargs One or two arguments as described above, to specify the query limits
 	 * @return Chainable this pointer
 	 */
 	limit : function(limits) {
-		if (_.isArray(limits)) {
-			this._limit = limits;
-		}
-		else {
-			this._limit = [limits];
-		}
+		this._limit = Array.prototype.slice.call(arguments);
 		return this;
 	},
 
@@ -201,9 +197,10 @@ _.extend(UpdateQuery.prototype, {
  * @param where The where object for this filter
  */
 SelectQuery.prototype = new Query();
-function SelectQuery(filter, where) {
+function SelectQuery(filter, where, alias) {
 	Query.call(this, filter);
 	this.where(where);
+	this._tables[0].options.alias = alias || '';
 }
 
 // Inherit/copy all of the methods from Query, and then fill in the ones we need to change
@@ -380,8 +377,11 @@ _.extend(SelectQuery.prototype, {
 	 * @return WHERE clause that can be concatenated immediately
 	 */
 	getWhere : function() {
-		var wheres = this._tables.map(function(v) {
-			return v.filter.decode_filter(v.where, ' AND ', v.options);
+		var wheres = [];
+		this._tables.forEach(function(v) {
+			var w = v.filter.decode_filter(v.where, ' AND ', v.options);
+			if (w.length > 0)
+				wheres.push(w);
 		});
 
 		var where = wheres.join(' AND ');
