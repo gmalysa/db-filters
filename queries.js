@@ -79,13 +79,14 @@ _.extend(Query.prototype, {
 
 	/**
 	 * We provide a default implementation for limit because it is used by three of the four queries that
-	 * are provided, so this reduces repetition. Limits are specified in one of two ways:
-	 * limit(count) or limit(offset, count).
+	 * are provided, so this reduces repetition. Formal parameters are limit([offset,] count)
 	 * @param varargs One or two arguments as described above, to specify the query limits
 	 * @return Chainable this pointer
 	 */
 	limit : function(limits) {
-		this._limit = Array.prototype.slice.call(arguments);
+		this._limit = [arguments[0]];
+		if (arguments.length == 2)
+			this._limit[1] = arguments[1];
 		return this;
 	},
 
@@ -227,22 +228,28 @@ _.extend(SelectQuery.prototype, {
 	 * @param varargs list of fields to group by, or one array of a list of fields
 	 * @return Chainable this pointer
 	 */
-	group : function(idx) {
-		var varargs = Array.prototype.slice.call(arguments);
-		if (typeof idx != 'number')
+	group : function() {
+		var i = 1;
+		var idx = arguments[0];
+
+		if (typeof idx != 'number') {
 			idx = 0;
-		else
-			varargs.shift();
+			i = 0;
+		}
 
-		if (_.isArray(varargs[0]))
-			varargs = varargs[0];
+		for (; i < arguments.length; ++i) {
+			if (_.isArray(arguments[i]))
+				Array.prototype.push.apply(this._tables[idx].group, arguments[i]);
+			else
+				this._tables[idx].group.push(arguments[i]);
+		}
 
-		Array.prototype.push.apply(this._table[idx].group, varargs);
 		return this;
 	},
 
 	/**
 	 * Sets the alias for this table or a joined table
+	 * @deprecated, Use alias options in constructor and join calls
 	 * @param join Join index, optional, will apply the alias to this joined table
 	 * @param alias The string alias to use for this table in the query
 	 * @return Chainable this pointer.
@@ -263,15 +270,19 @@ _.extend(SelectQuery.prototype, {
 	 * @param varargs, each is processed as a single field, whether literal or array type
 	 * @return Chainable this pointer
 	 */
-	fields : function(join) {
-		var args = Array.prototype.slice.call(arguments);
+	fields : function() {
+		var i = 1;
+		var join = arguments[0];
 		
-		if (typeof join != 'number')
+		if (typeof join != 'number') {
 			join = 0;
-		else
-			args.shift();
+			i = 0;
+		}
 
-		Array.prototype.push.apply(this._tables[join].fields, args);
+		for (; i < arguments.length; ++i) {
+			this._tables[join].fields.push(arguments[i]);
+		}
+
 		return this;
 	},
 
@@ -281,17 +292,22 @@ _.extend(SelectQuery.prototype, {
 	 * @param varargs order by terms to add, one field per additional argument, or one array as the first argument
 	 * @return Chainable this pointer
 	 */
-	order : function(idx) {
-		var varargs = Array.prototype.slice.call(arguments);
-		if (typeof idx != 'number')
+	order : function() {
+		var i = 1;
+		var idx = arguments[0];
+
+		if (typeof idx != 'number') {
 			idx = 0;
-		else
-			varargs.shift();
+			i = 0;
+		}
 
-		if (_.isArray(varargs[0]))
-			varargs = varargs[0];
+		for (; i < arguments.length; ++i) {
+			if (_.isArray(arguments[i]))
+				Array.prototype.push.apply(this._tables[idx].order, arguments[i]);
+			else
+				this._tables[idx].order.push(arguments[i]);
+		}
 
-		Array.prototype.push.apply(this._tables[idx].order, varargs);
 		return this;
 	},
 
@@ -344,14 +360,19 @@ _.extend(SelectQuery.prototype, {
 	 * @param varargs, Each is an array of ON details
 	 * @return Chainable this pointer
 	 */
-	on : function(join) {
-		var varargs = Array.prototype.slice.call(arguments);
-		if (typeof join != 'number')
-			join = this._tables.length - 1;
-		else
-			varargs.shift();
+	on : function() {
+		var join = arguments[0];
+		var i = 1;
 
-		Array.prototype.push.apply(this._tables[join].on, varargs);
+		if (typeof join != 'number') {
+			join = this._tables.length - 1;
+			i = 0;
+		}
+
+		for (; i < arguments.length; ++i) {
+			this._tables[join].on.push(arguments[i]);
+		}
+
 		return this;
 	},
 
@@ -415,6 +436,19 @@ _.extend(SelectQuery.prototype, {
 	 * @return String the ORDER BY part of this select statement
 	 */
 	getOrderBy : function() {
+		//Faster version without function calls--is it worth it for less clarity?
+		//var order = '';
+		//for (var t = 0; t < this._tables.length; ++t) {
+		//	var table = this._tables[t];
+		//	if (table.order[0]) {
+		//		var internalOrder = table.filter.escapeKey(table.order[0], table.options);
+		//	
+		//		for (var i = 1; i < table.order.length; ++i) {
+		//			internalOrder += ', ' + table.filter.escapeKey(table.order[i], table.options);
+		//		}
+		//	}
+		//}
+
 		var order = [];
 		this._tables.forEach(function(v) {
 			var internalOrder = v.order.map(function(o) {
@@ -467,7 +501,7 @@ _.extend(SelectQuery.prototype, {
 		if (on.length > 0) {
 			// Probably the most functional-ish piece of code I've ever written
 			// Map each _on entry to ... and separated by a ,
-			return ' ON ' + _.map(on, function(v) {
+			return ' ON ' + on.map(function(v) {
 				// its values mapped to ... and separated by an =
 				return _.map(v, function(v, k) {
 					// the table name for the key and the escaped identifier
