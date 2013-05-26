@@ -89,19 +89,25 @@ RawFunction.prototype.getField = function(key, filter, options) {
  * One good example is passing a second field to atan2(), instead of an actual
  * value
  ******************************************************************************/
-function FieldFunction(field) {
+function FieldFunction(field, filter) {
 	Operator.call(this, '$field');
 	this.field = field;
+	this.filter = filter;
 }
 FieldFunction.prototype = new Operator();
 FieldFunction.prototype.constructor = FieldFunction;
 
 /**
  * get() passes the field to the filter for escaping, always
+ * @todo Using the given options is incorrect; we need to get a set of options from the correct query to retrieve the correct table alias for prefixing the field name
+ * @todo But there is no way to do that yet, so add the query to options, and add a way to retrieve the alias for a given filter
  * @see Operator.getField()
  */
 FieldFunction.prototype.get = function(key, filter, options) {
-	return filter.escapeKey((this.field === undefined) ? key : this.field, options);
+	var realFilter = (this.filter === undefined ? filter : this.filter);
+	var realField = (this.field === undefined ? key : this.field);
+
+	return realFilter.escapeKey(realField, options);
 }
 
 /**
@@ -119,7 +125,8 @@ var operators = {};
 
 // Wrap the constructors in a function for consistency of interface
 operators.$raw = function(str) { return new RawFunction(str); };
-operators.$field = function(f) { return new FieldFunction(f); };
+operators.$field = function(field, filter) { return new FieldFunction(field, filter); };
+operators.$f = operators.$field;
 
 // Definition exports
 module.exports.Operator = Operator;

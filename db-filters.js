@@ -241,13 +241,13 @@ _.extend(db.prototype, {
 				qi.count++;
 			}
 			else {
-				that.queries[key] = {'count' : 1, 'sql' : query};
+				that.queries[key] = {count : 1, sql : query};
 			}
 
 			db.log(db.l_debug, query);
 			that.conn.query(query, function(err, rows) {
 				if (err) {
-					failure(_.extend(err, {'query' : query}));
+					failure(_.extend(err, {query : query}));
 				}
 				else {
 					success(rows);
@@ -398,9 +398,6 @@ _.extend(db.prototype, {
 	 * @return String the date represented as MySQL expects it for a DATE field
 	 */
 	handle_date : function(date) {
-		if (date == 'CURDATE()' || date == 'CURRENT_DATE()')
-			return date;
-
 		if (date instanceof Date)
 			return date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate();
 		
@@ -415,9 +412,6 @@ _.extend(db.prototype, {
 	 * @return String the date represented as MySQL exepcts it for a DATETIME field
 	 */
 	handle_datetime : function(date) {
-		if (date == 'NOW()')
-			return date;
-
 		if (date instanceof Date)
 			return this.handle_date(date) + ' ' + date.getHours() + ':' + date.getMinutes() + ':' + date.getSeconds();
 
