@@ -65,6 +65,27 @@ exports['where'] = function(test) {
 	sql = users.select({id : [1, 2]}).buildQuery();
 	test.equals(sql, 'SELECT * FROM users WHERE `id` IN (1, 2)');
 
+	sql = users.select({user : db.$like('%bob%')}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE `user` LIKE \'%bob%\'');
+
+	sql = users.select({user : db.$not_like('%bob%')}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE `user` NOT LIKE \'%bob%\'');
+
+	sql = users.select({user : /^asd/}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE `user` REGEXP \'^asd\'');
+
+	sql = users.select({user : db.$not_regex(/^asd/)}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE `user` NOT REGEXP \'^asd\'');
+
+	sql = users.select({salt_pw : 'password'}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE `password` = MD5(CONCAT(`salt`, \'password\'))');
+
+	sql = users.select({salt : db.$gt(db.$length(), 5)}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE LENGTH(`salt`) > \'5\'');
+
+	sql = users.select({user : db.$in(db.$length(), [1, 2, 3])}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE LENGTH(`user`) IN (\'1\', \'2\', \'3\')');
+
 	test.done();
 }
 
