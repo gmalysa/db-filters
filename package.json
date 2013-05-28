@@ -12,7 +12,6 @@
   "devDependencies" : {
   	"commander" : "1.1.1",
 	"flux-link" : ">=0.2.0",
-	"spyglass" : "1.0.0",
 	"nodeunit" : "0.8.0"
   },
   "engines"       : { "node": "> 0.8.0" }
