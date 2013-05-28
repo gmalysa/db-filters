@@ -1,5 +1,8 @@
 /**
  * Test suite for single table select queries
+ *
+ * The nice thing is that semantically, these queries don't need to make sense (i.e. select acos(id) ...)
+ * as we are just testing for valid syntactical construction
  */
 
 var db = require('../lib-cov/db-filters');
@@ -9,7 +12,8 @@ var users = new db('users', {
 	user : [db.varchar_t, 32],
 	password : [db.varchar_t, 32],
 	registered : db.datetime_t,
-	salt : [db.varchar_t, 8]
+	salt : [db.varchar_t, 8],
+	status : db.int_t
 }, {
 	salt_pw : function(key, value, terms, options) {
 		value = db.$eq(db.$md5(db.$concat(db.$f('salt'), value)));
@@ -45,6 +49,12 @@ exports['fields'] = function(test) {
 	sql = users.select().fields([db.$count('id'), 'c']).buildQuery();
 	test.equals(sql, 'SELECT COUNT(`id`) AS c FROM users');
 
+	sql = users.select().fields([db.$left('user', 3), 'prefix']).buildQuery();
+	test.equals(sql, 'SELECT LEFT(`user`, \'3\') AS prefix FROM users');
+
+	sql = users.select().fields(db.$mult(db.$acos('id'), 5)).buildQuery();
+	test.equals(sql, 'SELECT ACOS(`id`) * 5 FROM users');
+
 	test.done();
 }
 
@@ -52,11 +62,24 @@ exports['order'] = function(test) {
 	var sql = users.select().order(db.$asc('id')).buildQuery();
 	test.equals(sql, 'SELECT * FROM users ORDER BY `id` ASC');
 
-	sql = users.select().order(db.$desc('id')).buildQuery();
-	test.equals(sql, 'SELECT * FROM users ORDER BY `id` DESC');
+	sql = users.select().order(db.$desc('id'), 'status').buildQuery();
+	test.equals(sql, 'SELECT * FROM users ORDER BY `id` DESC, `status`');
+
+	sql = users.select().order(['id', 'registered']).buildQuery();
+	test.equals(sql, 'SELECT * FROM users ORDER BY `id`, `registered`');
 
 	test.done();
 }
+
+exports['group'] = function(test) {
+	var sql = users.select().group('status').buildQuery();
+	test.equals(sql, 'SELECT * FROM users GROUP BY `status`');
+
+	var sql = users.select().group(['status', 'registered']).buildQuery();
+	test.equals(sql, 'SELECT * FROM users GROUP BY `status`, `registered`');
+
+	test.done();
+};
 
 exports['where'] = function(test) {
 	var sql = users.select({id : 1}).buildQuery();
@@ -83,8 +106,8 @@ exports['where'] = function(test) {
 	sql = users.select({salt : db.$gt(db.$length(), 5)}).buildQuery();
 	test.equals(sql, 'SELECT * FROM users WHERE LENGTH(`salt`) > \'5\'');
 
-	sql = users.select({user : db.$in(db.$length(), [1, 2, 3])}).buildQuery();
-	test.equals(sql, 'SELECT * FROM users WHERE LENGTH(`user`) IN (\'1\', \'2\', \'3\')');
+	sql = users.select({id : db.$in(db.$pow(2), [1, 2, 4])}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE POW(`id`, 2) IN (1, 2, 4)');
 
 	test.done();
 }
