@@ -16,7 +16,7 @@ var users = new db('users', {
 	status : db.int_t
 }, {
 	salt_pw : function(key, value, terms, options) {
-		value = db.$eq(db.$md5(db.$concat(db.$f('salt'), value)));
+		value = db.$eq(db.$md5(db.$concat(this.c.salt, value)));
 		terms.push(value.get('password', this, options));
 	}
 });
