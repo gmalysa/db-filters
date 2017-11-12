@@ -13,6 +13,7 @@ var users = new db('users', {
 	password : [db.varchar_t, 32],
 	registered : db.datetime_t,
 	salt : [db.varchar_t, 8],
+	longid : db.bigint_t,
 	status : db.int_t
 }, {
 	salt_pw : function(key, value, terms, options) {
@@ -108,6 +109,16 @@ exports['where'] = function(test) {
 
 	sql = users.select({id : db.$in(db.$pow(2), [1, 2, 4])}).buildQuery();
 	test.equals(sql, 'SELECT * FROM users WHERE POW(`id`, 2) IN (1, 2, 4)');
+
+	test.done();
+}
+
+exports['bigint'] = function(test) {
+	var sql = users.select({longid : '12345'}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE `longid` = 12345');
+
+	var sql = users.select({longid : 'invalid'}).buildQuery();
+	test.equals(sql, 'SELECT * FROM users WHERE `longid` = 0');
 
 	test.done();
 }
